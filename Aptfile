@@ -6,3 +6,8 @@ libxrender-dev
 libgomp1
 cmake
 libboost-all-dev
+libx11-6
+build-essential
+libx11-6
+libx11-dev
+libxrender1
