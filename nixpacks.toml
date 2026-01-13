@@ -1,13 +1,17 @@
 [phases.setup]
 aptPkgs = [
+    "build-essential",
     "cmake",
     "libboost-all-dev",
+    "libx11-6",
     "libgl1-mesa-glx",
     "libglib2.0-0",
     "libsm6",
     "libxext6",
     "libxrender-dev",
-    "libgomp1"
+    "libgomp1",
+    "libopenblas-dev",
+    "liblapack-dev"
 ]
 
 [build]
