@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Dashboard</title>
+    <script src="/config.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: clamp(1.8em, 5vw, 3em);
+            font-weight: 700;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            font-size: 1em;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+
+        .tab:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px;
+            background: linear-gradient(135deg, #f6f8fb, #e9ecef);
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #28a745;
+            box-shadow: 0 0 15px #28a745;
+        }
+
+        .status-dot.disconnected {
+            background: #dc3545;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+        }
+
+        #liveImage {
+            width: 100%;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            background: #f0f0f0;
+            min-height: 300px;
+            max-height: 500px;
+            object-fit: contain;
+        }
+
+        .alert {
+            padding: 18px;
+            border-radius: 12px;
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            animation: slideIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%) scale(0.8);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .alert-success {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            border-left: 5px solid #28a745;
+            color: #155724;
+        }
+
+        .alert-warning {
+            background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+            border-left: 5px solid #ffc107;
+            color: #856404;
+        }
+
+        .alert-icon {
+            font-size: 2em;
+        }
+
+        .upload-section {
+            background: linear-gradient(135deg, #f6f8fb, #e9ecef);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f8f9fa;
+            transform: scale(1.02);
+        }
+
+        .upload-area.dragover {
+            background: #e7f3ff;
+            border-color: #764ba2;
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 1em;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .faces-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .face-card {
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .face-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .face-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .face-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .history-item {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .history-item:hover {
+            background: #f8f9fa;
+        }
+
+        .face-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+            margin: 2px;
+        }
+
+        .timestamp {
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        .preview-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-icon {
+            font-size: 5em;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 10px;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .faces-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+
+            .card {
+                padding: 15px;
+            }
+
+            .upload-area {
+                padding: 30px 15px;
+            }
+
+            .tab {
+                min-width: 120px;
+                padding: 12px;
+                font-size: 0.9em;
+            }
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎭 Face Recognition System</h1>
+            <p>AI-Powered Smart Security</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('live')">📹 Live Feed</button>
+            <button class="tab" onclick="switchTab('faces')">👤 Known Faces</button>
+            <button class="tab" onclick="switchTab('history')">📊 History</button>
+        </div>
+
+        <div id="liveTab" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-value" id="totalDetections">0</div>
+                    <div class="stat-label">Detections</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-value" id="recognizedCount">0</div>
+                    <div class="stat-label">Recognized</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">❓</div>
+                    <div class="stat-value" id="unknownCount">0</div>
+                    <div class="stat-label">Unknown</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-value" id="knownFacesCount">0</div>
+                    <div class="stat-label">Database</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">🎥 Live Camera Feed</h2>
+                <div class="status-bar">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Connecting...</span>
+                </div>
+                <img id="liveImage" src="" alt="Waiting for stream...">
+                <div id="alertContainer"></div>
+            </div>
+        </div>
+
+        <div id="facesTab" class="tab-content">
+            <div class="card">
+                <h2 class="card-title">➕ Add New Face</h2>
+                <div class="upload-section">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📸</div>
+                        <h3>Click or Drag to Upload</h3>
+                        <p>Upload a clear photo of the person's face</p>
+                        <input type="file" id="fileInput" accept="image/*" capture="environment">
+                    </div>
+                    
+                    <div id="previewContainer" class="preview-container" style="display:none;">
+                        <img id="previewImage" class="preview-image" src="">
+                    </div>
+                    
+                    <input type="text" id="personName" placeholder="Enter person's name">
+                    <button class="btn btn-primary" id="uploadBtn" disabled>
+                        <span>💾</span> Add to Database
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">👥 Known Faces Database</h2>
+                <div id="facesGrid" class="faces-grid">
+                    <div class="loader"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="historyTab" class="tab-content">
+            <div class="card">
+                <h2 class="card-title">📜 Detection History</h2>
+                <div id="historyContainer">
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <p>No detections yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_URL) || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+        const socket = io(SERVER_URL);
+        let selectedFile = null;
+        let stats = { total: 0, recognized: 0, unknown: 0 };
+
+        // Tab switching
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            if (tab === 'faces') loadKnownFaces();
+            if (tab === 'history') loadHistory();
+        }
+
+        // Connection
+        socket.on('connect', () => {
+            document.getElementById('statusDot').className = 'status-dot connected';
+            document.getElementById('statusText').textContent = '🟢 Connected';
+            loadKnownFaces();
+            loadStats();
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('statusDot').className = 'status-dot disconnected';
+            document.getElementById('statusText').textContent = '🔴 Disconnected';
+        });
+
+        // New detection
+        socket.on('new_detection', (data) => {
+            document.getElementById('liveImage').src = data.image;
+            
+            stats.total++;
+            stats.recognized += data.recognized.length;
+            stats.unknown += data.unknown;
+            updateStats();
+            
+            showAlert(data);
+        });
+
+        socket.on('faces_updated', (faces) => {
+            displayKnownFaces(faces);
+            document.getElementById('knownFacesCount').textContent = faces.length;
+        });
+
+        function showAlert(data) {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            
+            if (data.recognized.length > 0) {
+                alert.className = 'alert alert-success';
+                const names = data.recognized.map(n => `<span class="face-badge">✓ ${n}</span>`).join('');
+                alert.innerHTML = `
+                    <span class="alert-icon">🎉</span>
+                    <div>
+                        <strong>Recognized!</strong><br>
+                        ${names}
+                        <div class="timestamp">${data.timestamp}</div>
+                    </div>
+                `;
+            } else if (data.unknown > 0) {
+                alert.className = 'alert alert-warning';
+                alert.innerHTML = `
+                    <span class="alert-icon">⚠️</span>
+                    <div>
+                        <strong>Unknown Face Detected</strong><br>
+                        <span class="face-badge">❓ ${data.unknown} Unknown</span>
+                        <div class="timestamp">${data.timestamp}</div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = '';
+            container.appendChild(alert);
+            
+            if (data.recognized.length > 0) {
+                playSound();
+            }
+        }
+
+        function playSound() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.frequency.value = 800;
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.5);
+        }
+
+        function updateStats() {
+            document.getElementById('totalDetections').textContent = stats.total;
+            document.getElementById('recognizedCount').textContent = stats.recognized;
+            document.getElementById('unknownCount').textContent = stats.unknown;
+        }
+
+        function loadStats() {
+            fetch(`${SERVER_URL}/stats`)
+                .then(r => r.json())
+                .then(data => {
+                    stats.total = data.total_detections;
+                    stats.recognized = data.total_recognized;
+                    stats.unknown = data.detections_with_faces - data.total_recognized;
+                    updateStats();
+                    document.getElementById('knownFacesCount').textContent = data.known_faces_count;
+                });
+        }
+
+        // File upload
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const personName = document.getElementById('personName');
+        const uploadBtn = document.getElementById('uploadBtn');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+
+        function handleFile(file) {
+            if (!file || !file.type.startsWith('image/')) return;
+            
+            selectedFile = file;
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
+                uploadBtn.disabled = false;
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        uploadBtn.addEventListener('click', addFace);
+
+        function addFace() {
+            const name = personName.value.trim();
+            
+            if (!name || !selectedFile) {
+                alert('Please enter a name and select an image');
+                return;
+            }
+            
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span>⏳</span> Processing...';
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                fetch(`${SERVER_URL}/add_face`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        image: e.target.result
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Face added successfully!');
+                        personName.value = '';
+                        previewContainer.style.display = 'none';
+                        selectedFile = null;
+                        loadKnownFaces();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(err => alert('Error: ' + err))
+                .finally(() => {
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+                });
+            };
+            
+            reader.readAsDataURL(selectedFile);
+        }
+
+        function loadKnownFaces() {
+            fetch(`${SERVER_URL}/known_faces`)
+                .then(r => r.json())
+                .then(displayKnownFaces);
+        }
+
+        function displayKnownFaces(faces) {
+            const grid = document.getElementById('facesGrid');
+            
+            if (faces.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">👤</div>
+                        <p>No faces in database yet</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = faces.map(face => `
+                <div class="face-card">
+                    <img src="${face.image}" alt="${face.name}">
+                    <div class="face-name">${face.name}</div>
+                    <button class="btn btn-danger" onclick="removeFace('${face.filename}')">
+                        🗑️ Remove
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function removeFace(filename) {
+            if (!confirm('Remove this face from database?')) return;
+            
+            fetch(`${SERVER_URL}/remove_face/${filename}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        loadKnownFaces();
+                    }
+                });
+        }
+
+        function loadHistory() {
+            fetch(`${SERVER_URL}/history`)
+                .then(r => r.json())
+                .then(data => {
+                    const container = document.getElementById('historyContainer');
+                    
+                    if (data.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-icon">📭</div>
+                                <p>No detections yet</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = data.map(item => {
+                        const badges = [
+                            ...item.recognized.map(n => `<span class="face-badge">✓ ${n}</span>`),
+                            ...(item.unknown > 0 ? [`<span class="face-badge">❓ ${item.unknown} Unknown</span>`] : [])
+                        ].join('');
+                        
+                        return `
+                            <div class="history-item">
+                                <div>
+                                    ${badges}
+                                    <div class="timestamp">${item.timestamp}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                });
+        }
+    </script>
+</body>
+</html>

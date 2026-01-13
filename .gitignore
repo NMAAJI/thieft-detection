@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.log
+.DS_Store
+detected_faces/
+known_faces/*.jpg
+known_faces/*.png
+known_faces/*.jpeg
+!known_faces/.gitkeep
