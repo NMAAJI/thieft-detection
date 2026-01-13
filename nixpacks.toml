@@ -19,4 +19,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+<<<<<<< HEAD
 startCommand = "gunicorn --bind 0.0.0.0:8080 --worker-class eventlet -w 1 server:app"
+=======
+startCommand = "gunicorn --bind 0.0.0.0:$PORT --worker-class eventlet -w 1 server:app"
+>>>>>>> 0118eb0 (Use libgl1 and PORT env var in Dockerfile; use  in nixpacks startCommand)
