@@ -2,7 +2,7 @@
 aptPkgs = [
     "cmake",
     "libboost-all-dev",
-    "libgl1-mesa-glx",
+    "libgl1",             ← FIXED!
     "libglib2.0-0",
     "libsm6",
     "libxext6",
