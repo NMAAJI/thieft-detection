@@ -1,248 +1,207 @@
-from flask import Flask, request, jsonify, render_template
-from flask_socketio import SocketIO, emit
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
-import cv2
-import numpy as np
-from datetime import datetime
-import base64
-import json
-import os
 import face_recognition
+import numpy as np
+from PIL import Image
+import io
+import os
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Directories
-os.makedirs('known_faces', exist_ok=True)
-os.makedirs('detected_faces', exist_ok=True)
+# Configuration
+KNOWN_FACES_DIR = "known_faces"
+DETECTION_LOG = []
 
-# Store known faces
+# Load known faces on startup
 known_face_encodings = []
 known_face_names = []
 
-# Detection history
-detection_history = []
-MAX_HISTORY = 100
-
 def load_known_faces():
-    """Load all known faces from directory"""
+    """Load all known faces from the known_faces directory"""
     global known_face_encodings, known_face_names
     known_face_encodings = []
     known_face_names = []
     
-    if not os.path.exists('known_faces'):
+    if not os.path.exists(KNOWN_FACES_DIR):
+        os.makedirs(KNOWN_FACES_DIR)
+        print(f"⚠️  Created {KNOWN_FACES_DIR} directory - add face images here")
         return
     
-    for filename in os.listdir('known_faces'):
-        if filename.endswith(('.jpg', '.jpeg', '.png')):
-            path = os.path.join('known_faces', filename)
-            image = face_recognition.load_image_file(path)
-            encodings = face_recognition.face_encodings(image)
-            
-            if encodings:
-                known_face_encodings.append(encodings[0])
-                name = os.path.splitext(filename)[0]
-                known_face_names.append(name)
+    for filename in os.listdir(KNOWN_FACES_DIR):
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+            try:
+                filepath = os.path.join(KNOWN_FACES_DIR, filename)
+                image = face_recognition.load_image_file(filepath)
+                encodings = face_recognition.face_encodings(image)
+                
+                if encodings:
+                    known_face_encodings.append(encodings[0])
+                    # Use filename without extension as name
+                    name = os.path.splitext(filename)[0]
+                    known_face_names.append(name)
+                    print(f"✓ Loaded face: {name}")
+                else:
+                    print(f"⚠️  No face found in: {filename}")
+            except Exception as e:
+                print(f"✗ Error loading {filename}: {str(e)}")
     
-    print(f"Loaded {len(known_face_names)} known faces")
+    print(f"\n✓ Loaded {len(known_face_names)} known faces: {known_face_names}")
 
-def recognize_faces(image):
-    """Recognize faces in image"""
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    face_locations = face_recognition.face_locations(rgb_image)
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-    
-    face_names = []
-    for face_encoding in face_encodings:
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.6)
-        name = "Unknown"
-        
-        if True in matches:
-            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-            best_match_index = np.argmin(face_distances)
-            if matches[best_match_index]:
-                name = known_face_names[best_match_index]
-        
-        face_names.append(name)
-    
-    return face_locations, face_names
-
-def draw_faces(image, face_locations, face_names):
-    """Draw rectangles and names on faces"""
-    for (top, right, bottom, left), name in zip(face_locations, face_names):
-        color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-        
-        cv2.rectangle(image, (left, top), (right, bottom), color, 2)
-        cv2.rectangle(image, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
-        cv2.putText(image, name, (left + 6, bottom - 6), cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
-    
-    return image
+# Load known faces at startup
+load_known_faces()
 
 @app.route('/')
 def index():
+    """Serve the main dashboard"""
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload', methods=['POST', 'OPTIONS'])
 def upload_image():
-    """Receive image from ESP32-CAM and process it"""
+    """Handle image upload from ESP32-CAM or simulator"""
+    
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+    
     try:
-        image_data = request.data
-        nparr = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # Get raw image data from request body
+        image_data = request.get_data()
         
-        if image is None:
-            return jsonify({'error': 'Invalid image'}), 400
+        if not image_data:
+            return jsonify({
+                "error": "No image data received",
+                "faces": 0
+            }), 400
         
-        face_locations, face_names = recognize_faces(image)
-        image_with_faces = draw_faces(image.copy(), face_locations, face_names)
+        # Convert bytes to PIL Image
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+        except Exception as e:
+            return jsonify({
+                "error": f"Invalid image format: {str(e)}",
+                "faces": 0
+            }), 400
         
-        _, buffer = cv2.imencode('.jpg', image_with_faces)
-        img_base64 = base64.b64encode(buffer).encode('utf-8').decode('utf-8')
+        # Convert PIL Image to numpy array for face_recognition
+        image_np = np.array(image)
         
-        detection = {
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'faces': len(face_locations),
-            'recognized': [name for name in face_names if name != "Unknown"],
-            'unknown': face_names.count("Unknown"),
-            'image': f'data:image/jpeg;base64,{img_base64}'
+        # Detect faces
+        face_locations = face_recognition.face_locations(image_np)
+        face_encodings = face_recognition.face_encodings(image_np, face_locations)
+        
+        detected_faces = []
+        recognized_count = 0
+        unknown_count = 0
+        
+        # Compare with known faces
+        for face_encoding in face_encodings:
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.6)
+            name = "Unknown"
+            
+            # Use the known face with the smallest distance
+            if known_face_encodings:
+                face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+                if len(face_distances) > 0:
+                    best_match_index = np.argmin(face_distances)
+                    if matches[best_match_index]:
+                        name = known_face_names[best_match_index]
+                        recognized_count += 1
+                    else:
+                        unknown_count += 1
+            else:
+                unknown_count += 1
+            
+            detected_faces.append({
+                "name": name,
+                "status": "recognized" if name != "Unknown" else "unknown"
+            })
+        
+        # Log detection
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "total_faces": len(face_locations),
+            "recognized": recognized_count,
+            "unknown": unknown_count,
+            "faces": detected_faces
         }
+        DETECTION_LOG.append(log_entry)
         
-        detection_history.insert(0, detection)
-        if len(detection_history) > MAX_HISTORY:
-            detection_history.pop()
+        # Keep only last 100 logs
+        if len(DETECTION_LOG) > 100:
+            DETECTION_LOG.pop(0)
         
-        if len(face_locations) > 0:
-            filename = f"detected_faces/detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            cv2.imwrite(filename, image_with_faces)
-        
-        socketio.emit('new_detection', detection)
+        print(f"✓ Detected {len(face_locations)} faces - {recognized_count} recognized, {unknown_count} unknown")
         
         return jsonify({
-            'success': True,
-            'faces': len(face_locations),
-            'recognized': detection['recognized'],
-            'timestamp': detection['timestamp']
-        })
+            "status": "success",
+            "faces": len(face_locations),
+            "recognized": recognized_count,
+            "unknown": unknown_count,
+            "detections": detected_faces,
+            "timestamp": datetime.now().isoformat()
+        }), 200
         
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"✗ Error processing image: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            "error": f"Server error: {str(e)}",
+            "faces": 0
+        }), 500
 
-@app.route('/add_face', methods=['POST'])
-def add_face():
-    """Add a new known face"""
-    try:
-        data = request.get_json()
-        name = data.get('name', '').strip()
-        image_data = data.get('image', '')
-        
-        if not name or not image_data:
-            return jsonify({'error': 'Name and image required'}), 400
-        
-        # Decode base64 image
-        image_data = image_data.split(',')[1] if ',' in image_data else image_data
-        image_bytes = base64.b64decode(image_data)
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        # Check if face exists in image
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        face_encodings = face_recognition.face_encodings(rgb_image)
-        
-        if not face_encodings:
-            return jsonify({'error': 'No face detected in image'}), 400
-        
-        # Save image
-        filename = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        filepath = os.path.join('known_faces', filename)
-        cv2.imwrite(filepath, image)
-        
-        # Reload faces
-        load_known_faces()
-        
-        socketio.emit('faces_updated', get_known_faces_list())
-        
-        return jsonify({'success': True, 'message': f'Added {name} to known faces'})
-        
-    except Exception as e:
-        print(f"Error adding face: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/remove_face/<filename>', methods=['DELETE'])
-def remove_face(filename):
-    """Remove a known face"""
-    try:
-        filepath = os.path.join('known_faces', filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            load_known_faces()
-            socketio.emit('faces_updated', get_known_faces_list())
-            return jsonify({'success': True, 'message': 'Face removed'})
-        else:
-            return jsonify({'error': 'File not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/known_faces', methods=['GET'])
-def get_known_faces():
-    """Get list of known faces"""
-    return jsonify(get_known_faces_list())
-
-def get_known_faces_list():
-    """Helper to get known faces with images"""
-    faces = []
-    for filename in os.listdir('known_faces'):
-        if filename.endswith(('.jpg', '.jpeg', '.png')):
-            filepath = os.path.join('known_faces', filename)
-            with open(filepath, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
-            
-            name = os.path.splitext(filename)[0]
-            # Remove timestamp from display name
-            display_name = '_'.join(name.split('_')[:-2]) if len(name.split('_')) > 2 else name
-            
-            faces.append({
-                'filename': filename,
-                'name': display_name,
-                'image': f'data:image/jpeg;base64,{image_data}'
-            })
-    return faces
-
-@app.route('/history', methods=['GET'])
-def get_history():
-    return jsonify(detection_history)
-
-@app.route('/stats', methods=['GET'])
-def get_stats():
-    total_detections = len(detection_history)
-    detections_with_faces = sum(1 for d in detection_history if d['faces'] > 0)
-    total_recognized = sum(len(d['recognized']) for d in detection_history)
-    
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Get detection logs"""
     return jsonify({
-        'total_detections': total_detections,
-        'detections_with_faces': detections_with_faces,
-        'total_recognized': total_recognized,
-        'known_faces_count': len(known_face_names)
+        "logs": DETECTION_LOG,
+        "total": len(DETECTION_LOG)
     })
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-    emit('connection_response', {'data': 'Connected'})
+@app.route('/api/known-faces', methods=['GET'])
+def get_known_faces():
+    """Get list of known faces"""
+    return jsonify({
+        "faces": known_face_names,
+        "count": len(known_face_names)
+    })
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
+@app.route('/api/reload-faces', methods=['POST'])
+def reload_faces():
+    """Reload known faces from directory"""
+    try:
+        load_known_faces()
+        return jsonify({
+            "status": "success",
+            "count": len(known_face_names),
+            "faces": known_face_names
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "known_faces": len(known_face_names),
+        "detections_logged": len(DETECTION_LOG)
+    })
 
 if __name__ == '__main__':
-    print("Loading known faces...")
-    load_known_faces()
-    print("Starting Face Recognition Server...")
-    
-    # Get port from environment variable (Railway uses this)
     port = int(os.environ.get('PORT', 5000))
-    print(f"Server running on port {port}")
-    
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    print(f"\n🚀 Starting Face Recognition Server on port {port}")
+    print(f"📁 Known faces directory: {KNOWN_FACES_DIR}")
+    print(f"👤 Loaded {len(known_face_names)} known faces")
+    print("\n" + "="*50)
+    app.run(host='0.0.0.0', port=port, debug=False)
