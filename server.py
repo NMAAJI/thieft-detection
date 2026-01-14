@@ -86,48 +86,58 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
-    """Receive image from ESP32-CAM and process it"""
     try:
-        image_data = request.data
-        nparr = np.frombuffer(image_data, np.uint8)
+        # 1️⃣ Read image bytes (supports ESP32 + browser)
+        if 'file' in request.files:
+            image_bytes = request.files['file'].read()
+        else:
+            image_bytes = request.data
+
+        if not image_bytes or len(image_bytes) == 0:
+            return jsonify({'error': 'empty_image'}), 400
+
+        # 2️⃣ Decode image
+        nparr = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if image is None:
-            return jsonify({'error': 'Invalid image'}), 400
-        
+            return jsonify({'error': 'decode_failed'}), 400
+
+        # 3️⃣ Face recognition
         face_locations, face_names = recognize_faces(image)
         image_with_faces = draw_faces(image.copy(), face_locations, face_names)
-        
+
+        # 4️⃣ Encode result image (FIXED)
         _, buffer = cv2.imencode('.jpg', image_with_faces)
-        img_base64 = base64.b64encode(buffer).encode('utf-8').decode('utf-8')
-        
+        img_base64 = base64.b64encode(buffer).decode('utf-8')  # ✅ FIX
+
         detection = {
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'faces': len(face_locations),
-            'recognized': [name for name in face_names if name != "Unknown"],
+            'recognized': [n for n in face_names if n != "Unknown"],
             'unknown': face_names.count("Unknown"),
             'image': f'data:image/jpeg;base64,{img_base64}'
         }
-        
+
         detection_history.insert(0, detection)
         if len(detection_history) > MAX_HISTORY:
             detection_history.pop()
-        
-        if len(face_locations) > 0:
+
+        if face_locations:
             filename = f"detected_faces/detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
             cv2.imwrite(filename, image_with_faces)
-        
+
         socketio.emit('new_detection', detection)
-        
+
         return jsonify({
             'success': True,
             'faces': len(face_locations),
             'recognized': detection['recognized'],
             'timestamp': detection['timestamp']
         })
-        
+
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print("UPLOAD ERROR:", str(e))
         return jsonify({'error': str(e)}), 500
 
 @app.route('/add_face', methods=['POST'])
