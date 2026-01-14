@@ -1,15 +1,8 @@
-// Configuration for local and Railway deployment
+// Configuration for deployment
 const CONFIG = {
-    // Change this to your Railway URL after deployment
-    // For local: 'http://localhost:5000'
-    // For Railway: 'https://your-app.up.railway.app'
-    SERVER_URL: window.location.hostname === 'localhost' 
-        ? 'http://localhost:5000' 
-        : window.location.origin,
-    
-    // Auto-detect protocol (http/https)
+    // SERVER_URL: use page origin; page-level SERVER_URL override may exist
+    SERVER_URL: window.location.origin,
     USE_HTTPS: window.location.protocol === 'https:'
 };
 
-// Export for use in HTML
 window.APP_CONFIG = CONFIG;
