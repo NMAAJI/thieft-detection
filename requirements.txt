@@ -1,8 +1,13 @@
-Flask==3.0.0
-flask-cors==4.0.0
-face-recognition==1.3.0
-numpy==1.24.3
-Pillow==10.1.0
-gunicorn==21.2.0
-dlib==19.24.2
-cmake==3.27.7
+[phases.setup]
+aptPkgs = [
+    "cmake",
+    "libboost-all-dev",
+    "libgl1",             
+    "libglib2.0-0",
+    "libsm6",
+    "libxext6",
+    "libxrender-dev",
+    "libgomp1",
+    "libx11-6",
+    "libxcb1"
+]
