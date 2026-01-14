@@ -1,26 +1,13 @@
 [phases.setup]
 aptPkgs = [
-    "build-essential",
     "cmake",
     "libboost-all-dev",
-    "libx11-6",
     "libgl1-mesa-glx",
     "libglib2.0-0",
     "libsm6",
     "libxext6",
     "libxrender-dev",
     "libgomp1",
-    "libopenblas-dev",
-    "liblapack-dev"
+    "libx11-6",
+    "libxcb1"
 ]
-
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-<<<<<<< HEAD
-startCommand = "gunicorn --bind 0.0.0.0:8080 --worker-class eventlet -w 1 server:app"
-=======
-startCommand = "gunicorn --bind 0.0.0.0:$PORT --worker-class eventlet -w 1 server:app"
->>>>>>> 0118eb0 (Use libgl1 and PORT env var in Dockerfile; use  in nixpacks startCommand)

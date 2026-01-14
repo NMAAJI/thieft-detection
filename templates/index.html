@@ -6,6 +6,11 @@
     <title>Face Recognition Dashboard</title>
     <script src="/config.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const SERVER_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:5000'
+            : window.location.origin;
+    </script>
     <style>
         * {
             margin: 0;
@@ -545,7 +550,6 @@
     </div>
 
     <script>
-        const SERVER_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_URL) || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
         const socket = io(SERVER_URL);
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
