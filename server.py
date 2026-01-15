@@ -25,11 +25,31 @@ MAX_KNOWN_FACES = 100
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
-# ESP32 does NOT need CORS
 CORS(app, resources={
-    r"/upload": {"origins": []},
-    r"/add_face": {"origins": []},
-    r"/remove_face/*": {"origins": []},
+    r"/upload": {
+        "origins": "*",
+        "allow_headers": ["Content-Type", "X-ESP32-KEY"]
+    },
+    r"/add_face": {
+        "origins": "*",
+        "allow_headers": ["Content-Type", "X-ESP32-KEY"]
+    },
+    r"/remove_face/*": {
+        "origins": "*",
+        "allow_headers": ["X-ESP32-KEY"]
+    },
+    r"/known_faces": {
+        "origins": "*",
+        "allow_headers": ["X-ESP32-KEY"]
+    },
+    r"/history": {
+        "origins": "*",
+        "allow_headers": ["X-ESP32-KEY"]
+    },
+    r"/stats": {
+        "origins": "*",
+        "allow_headers": ["X-ESP32-KEY"]
+    }
 })
 
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -47,7 +67,8 @@ LAST_RECOG = 0
 # ================= HELPERS =================
 
 def authorized(req):
-    return req.headers.get("X-ESP32-KEY") == UPLOAD_SECRET
+    key = req.headers.get("X-ESP32-KEY", "")
+    return key.strip() == UPLOAD_SECRET.strip()
 
 def is_valid_image(data):
     try:
@@ -205,6 +226,9 @@ def remove_face(filename):
 def get_known_faces():
     faces = []
     for f in os.listdir("known_faces"):
+        if not f.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue   # skip .gitkeep and other non-image files
+
         with open(os.path.join("known_faces", f), "rb") as img:
             faces.append({
                 "filename": f,
