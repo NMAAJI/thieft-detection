@@ -8,8 +8,7 @@ import base64
 import json
 import os
 import face_recognition
-import smtplib
-from email.mime.text import MIMEText
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -84,38 +83,40 @@ def draw_faces(image, face_locations, face_names):
 
 def send_email_alert(names, timestamp):
     try:
+        api_key = os.environ.get("BREVO_API_KEY")
         sender = os.environ.get("ALERT_EMAIL_FROM")
-        password = os.environ.get("ALERT_EMAIL_PASSWORD")
         receiver = os.environ.get("ALERT_EMAIL_TO")
 
-        if not sender or not password or not receiver:
-            print("Email alert skipped (missing env vars)")
-            return
-
-        subject = "🚨 KNOWN PERSON DETECTED"
-        body = f"""
-KNOWN PERSON DETECTED
+        payload = {
+            "sender": {"email": sender},
+            "to": [{"email": receiver}],
+            "subject": "🚨 KNOWN PERSON DETECTED",
+            "textContent": f"""
+Known person detected!
 
 Names: {", ".join(names)}
 Time: {timestamp}
 
 Thief Detection System
 """
+        }
 
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = sender
-        msg["To"] = receiver
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload
+        )
 
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(sender, password)
-        server.send_message(msg)
-        server.quit()
-
-        print("Email alert sent")
+        if response.status_code in [200, 201]:
+            print("Brevo email sent")
+        else:
+            print("Brevo error:", response.text)
 
     except Exception as e:
-        print("Email alert error:", e)
+        print("Email error:", e)
 
 @app.route('/')
 def index():
