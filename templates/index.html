@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; script-src 'self' https://cdn.socket.io;">
     <title>Face Recognition Dashboard</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
@@ -838,21 +839,14 @@
                 alertSound.pause();
                 alertSound.currentTime = 0;
                 audioUnlocked = true;
-                console.log("🔓 Audio unlocked");
-            }).catch(err => {
-                console.log("Audio unlock failed", err);
-            });
+            }).catch(err => {});
         }
     });
 
     socket.on("new_detection", data => {
-        console.log("Detection event:", data);
-
         if (data.recognized && data.recognized.length > 0 && audioUnlocked) {
             alertSound.currentTime = 0;
-            alertSound.play().catch(err => {
-                console.log("Sound play error:", err);
-            });
+            alertSound.play().catch(err => {});
         }
     });
     </script>

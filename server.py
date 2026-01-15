@@ -8,8 +8,11 @@ import base64
 import json
 import os
 import face_recognition
+from time import time
+import uuid
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2 MB max upload
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -24,6 +27,31 @@ known_face_names = []
 # Detection history
 detection_history = []
 MAX_HISTORY = 100
+
+# Rate limiting
+LAST_UPLOAD = {}
+UPLOAD_INTERVAL = 1.5  # seconds
+
+# Frame counter for performance
+FRAME_COUNT = 0
+
+def is_valid_image(image_bytes):
+    """Validate if bytes represent a valid image"""
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        return img is not None
+    except:
+        return False
+
+def rate_limit(ip):
+    """Check if IP is rate limited"""
+    now = time()
+    last = LAST_UPLOAD.get(ip, 0)
+    if now - last < UPLOAD_INTERVAL:
+        return False
+    LAST_UPLOAD[ip] = now
+    return True
 
 def load_known_faces():
     """Load all known faces from directory"""
@@ -56,7 +84,7 @@ def recognize_faces(image):
     
     face_names = []
     for face_encoding in face_encodings:
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.6)
+        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.5)
         name = "Unknown"
         
         if True in matches:
@@ -87,6 +115,16 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload_image():
     try:
+        # Authentication
+        secret = request.headers.get("X-ESP32-KEY")
+        if secret != os.environ.get("UPLOAD_SECRET"):
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        # Rate limiting
+        ip = request.remote_addr
+        if not rate_limit(ip):
+            return jsonify({'error': 'Too many requests'}), 429
+        
         # 1️⃣ Read image bytes (supports ESP32 + browser)
         if 'file' in request.files:
             image_bytes = request.files['file'].read()
@@ -95,6 +133,10 @@ def upload_image():
 
         if not image_bytes or len(image_bytes) == 0:
             return jsonify({'error': 'empty_image'}), 400
+        
+        # Validate image
+        if not is_valid_image(image_bytes):
+            return jsonify({'error': 'Invalid image'}), 400
 
         # 2️⃣ Decode image
         nparr = np.frombuffer(image_bytes, np.uint8)
@@ -103,8 +145,14 @@ def upload_image():
         if image is None:
             return jsonify({'error': 'decode_failed'}), 400
 
-        # 3️⃣ Face recognition
-        face_locations, face_names = recognize_faces(image)
+        # 3️⃣ Face recognition (skip frames for performance)
+        global FRAME_COUNT
+        FRAME_COUNT += 1
+        
+        if FRAME_COUNT % 3 == 0:
+            face_locations, face_names = recognize_faces(image)
+        else:
+            face_locations, face_names = [], []
         
         recognized_names = [n for n in face_names if n != "Unknown"]
         
@@ -127,7 +175,7 @@ def upload_image():
             detection_history.pop()
 
         if face_locations:
-            filename = f"detected_faces/detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            filename = f"detected_faces/{uuid.uuid4().hex}.jpg"
             cv2.imwrite(filename, image_with_faces)
 
         socketio.emit('new_detection', detection)
