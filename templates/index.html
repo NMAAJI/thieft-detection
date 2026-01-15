@@ -554,6 +554,24 @@
         const socket = io(SERVER_URL);
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
+        
+        // Audio unlock (MUST BE FIRST)
+        let audioUnlocked = false;
+        const alertSound = document.getElementById('alertSound');
+        
+        // Sound cooldown (prevent spam)
+        let lastSoundTime = 0;
+        const SOUND_COOLDOWN = 5000; // 5 seconds
+        
+        document.body.addEventListener('click', () => {
+            if (!audioUnlocked) {
+                alertSound.play().then(() => {
+                    alertSound.pause();
+                    alertSound.currentTime = 0;
+                    audioUnlocked = true;
+                }).catch(() => {});
+            }
+        }, { once: true });
 
         // Tab switching
         function switchTab(tab) {
@@ -633,7 +651,12 @@
         }
 
         function playSound() {
-            const alertSound = document.getElementById('alertSound');
+            if (!audioUnlocked) return;
+
+            const now = Date.now();
+            if (now - lastSoundTime < SOUND_COOLDOWN) return;
+
+            lastSoundTime = now;
             alertSound.currentTime = 0;
             alertSound.play().catch(() => {});
         }
@@ -822,33 +845,5 @@
         }
     </script>
 
-    <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
-
-    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-
-    <script>
-    const socket = io();
-    const alertSound = document.getElementById("alertSound");
-
-    // REQUIRED: user interaction unlocks audio
-    let audioUnlocked = false;
-
-    document.body.addEventListener("click", () => {
-        if (!audioUnlocked) {
-            alertSound.play().then(() => {
-                alertSound.pause();
-                alertSound.currentTime = 0;
-                audioUnlocked = true;
-            }).catch(err => {});
-        }
-    });
-
-    socket.on("new_detection", data => {
-        if (data.recognized && data.recognized.length > 0 && audioUnlocked) {
-            alertSound.currentTime = 0;
-            alertSound.play().catch(err => {});
-        }
-    });
-    </script>
 </body>
 </html>

@@ -32,8 +32,9 @@ MAX_HISTORY = 100
 LAST_UPLOAD = {}
 UPLOAD_INTERVAL = 1.5  # seconds
 
-# Frame counter for performance
-FRAME_COUNT = 0
+# Time-based face recognition (prevents memory leak in multi-worker setup)
+LAST_RECOG = 0
+RECOG_INTERVAL = 1.0  # seconds
 
 def is_valid_image(image_bytes):
     """Validate if bytes represent a valid image"""
@@ -47,6 +48,12 @@ def is_valid_image(image_bytes):
 def rate_limit(ip):
     """Check if IP is rate limited"""
     now = time()
+    
+    # Cleanup old entries (prevent memory leak)
+    for k in list(LAST_UPLOAD.keys()):
+        if now - LAST_UPLOAD[k] > 10:
+            del LAST_UPLOAD[k]
+    
     last = LAST_UPLOAD.get(ip, 0)
     if now - last < UPLOAD_INTERVAL:
         return False
@@ -79,7 +86,7 @@ def recognize_faces(image):
     """Recognize faces in image"""
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
-    face_locations = face_recognition.face_locations(rgb_image)
+    face_locations = face_recognition.face_locations(rgb_image, model="hog")
     face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
     
     face_names = []
@@ -116,9 +123,14 @@ def index():
 def upload_image():
     try:
         # Authentication
+        expected = os.environ.get("UPLOAD_SECRET")
         secret = request.headers.get("X-ESP32-KEY")
-        if secret != os.environ.get("UPLOAD_SECRET"):
+        if not expected or secret != expected:
             return jsonify({"error": "Unauthorized"}), 401
+        
+        # Content-length safety check
+        if request.content_length and request.content_length > 2 * 1024 * 1024:
+            return jsonify({"error": "Payload too large"}), 413
         
         # Rate limiting
         ip = request.remote_addr
@@ -145,16 +157,18 @@ def upload_image():
         if image is None:
             return jsonify({'error': 'decode_failed'}), 400
 
-        # 3️⃣ Face recognition (skip frames for performance)
-        global FRAME_COUNT
-        FRAME_COUNT += 1
+        # 3️⃣ Face recognition (time-based, not frame-based)
+        global LAST_RECOG
+        now = time()
         
-        if FRAME_COUNT % 3 == 0:
-            face_locations, face_names = recognize_faces(image)
+        if now - LAST_RECOG > RECOG_INTERVAL:
+            if known_face_encodings:
+                face_locations, face_names = recognize_faces(image)
+            else:
+                face_locations, face_names = [], []
+            LAST_RECOG = now
         else:
             face_locations, face_names = [], []
-        
-        recognized_names = [n for n in face_names if n != "Unknown"]
         
         image_with_faces = draw_faces(image.copy(), face_locations, face_names)
 
@@ -177,6 +191,18 @@ def upload_image():
         if face_locations:
             filename = f"detected_faces/{uuid.uuid4().hex}.jpg"
             cv2.imwrite(filename, image_with_faces)
+            
+            # Auto-cleanup old detections to prevent disk filling
+            try:
+                files = os.listdir("detected_faces")
+                if len(files) > 300:
+                    for f in sorted(files)[:50]:
+                        try:
+                            os.remove(os.path.join("detected_faces", f))
+                        except:
+                            pass
+            except:
+                pass
 
         socketio.emit('new_detection', detection)
 
