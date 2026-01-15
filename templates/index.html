@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' wss: https:; img-src 'self' data:; media-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline';">
     <title>Face Recognition Dashboard</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
@@ -11,6 +11,15 @@
         const SERVER_URL = window.location.hostname === 'localhost'
             ? 'http://localhost:5000'
             : window.location.origin;
+
+        // ✅ SECURE: API key injected server-side
+        // This variable is populated by Flask template rendering
+        const API_KEY = "{{ api_key }}";
+        
+        // Validate that API key was properly injected
+        if (!API_KEY || API_KEY === "{{ api_key }}") {
+            console.error('⚠️ API key not properly configured!');
+        }
     </script>
     <style>
         * {
@@ -553,7 +562,8 @@
     <script>
         const socket = io(SERVER_URL, {
             transports: ['websocket'],
-            upgrade: false
+            upgrade: false,
+            auth: { key: API_KEY }
         });
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
@@ -671,12 +681,14 @@
         }
 
         function loadStats() {
-            fetch(`${SERVER_URL}/stats`)
+            fetch(`${SERVER_URL}/stats`, {
+                headers: { 'X-ESP32-KEY': API_KEY }
+            })
                 .then(r => r.json())
                 .then(data => {
                     stats.total = data.total_detections;
                     stats.recognized = data.total_recognized;
-                    stats.unknown = data.detections_with_faces - data.total_recognized;
+                    stats.unknown = stats.total - stats.recognized;
                     updateStats();
                     document.getElementById('knownFacesCount').textContent = data.known_faces_count;
                 });
@@ -743,7 +755,10 @@
             reader.onload = (e) => {
                 fetch(`${SERVER_URL}/add_face`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-ESP32-KEY': API_KEY
+                    },
                     body: JSON.stringify({
                         name: name,
                         image: e.target.result
@@ -772,7 +787,9 @@
         }
 
         function loadKnownFaces() {
-            fetch(`${SERVER_URL}/known_faces`)
+            fetch(`${SERVER_URL}/known_faces`, {
+                headers: { 'X-ESP32-KEY': API_KEY }
+            })
                 .then(r => r.json())
                 .then(displayKnownFaces);
         }
@@ -804,7 +821,10 @@
         function removeFace(filename) {
             if (!confirm('Remove this face from database?')) return;
             
-            fetch(`${SERVER_URL}/remove_face/${filename}`, { method: 'DELETE' })
+            fetch(`${SERVER_URL}/remove_face/${filename}`, {
+                method: 'DELETE',
+                headers: { 'X-ESP32-KEY': API_KEY }
+            })
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
@@ -814,7 +834,9 @@
         }
 
         function loadHistory() {
-            fetch(`${SERVER_URL}/history`)
+            fetch(`${SERVER_URL}/history`, {
+                headers: { 'X-ESP32-KEY': API_KEY }
+            })
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('historyContainer');

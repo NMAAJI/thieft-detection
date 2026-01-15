@@ -1,335 +1,241 @@
 from flask import Flask, request, jsonify, render_template
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 from flask_cors import CORS
 import cv2
 import numpy as np
 from datetime import datetime
 import base64
-import json
 import os
 import face_recognition
 from time import time
 import uuid
 
+# ================= ENV CONFIG =================
+UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET")  # SET IN RAILWAY
+if not UPLOAD_SECRET:
+    raise RuntimeError("UPLOAD_SECRET not set in environment")
+
+MAX_UPLOAD_MB = 2
+UPLOAD_INTERVAL = 3.0
+RECOG_INTERVAL = 2.0
+MAX_HISTORY = 100
+MAX_KNOWN_FACES = 100
+# ==============================================
+
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2 MB max upload
-CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+
+# ESP32 does NOT need CORS
+CORS(app, resources={
+    r"/upload": {"origins": []},
+    r"/add_face": {"origins": []},
+    r"/remove_face/*": {"origins": []},
+})
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Directories
-os.makedirs('known_faces', exist_ok=True)
-os.makedirs('detected_faces', exist_ok=True)
+os.makedirs("known_faces", exist_ok=True)
+os.makedirs("detected_faces", exist_ok=True)
 
-# Store known faces
 known_face_encodings = []
 known_face_names = []
-
-# Detection history
 detection_history = []
-MAX_HISTORY = 100
 
-# Rate limiting
 LAST_UPLOAD = {}
-UPLOAD_INTERVAL = 1.5  # seconds
-
-# Time-based face recognition (prevents memory leak in multi-worker setup)
 LAST_RECOG = 0
-RECOG_INTERVAL = 1.0  # seconds
 
-def is_valid_image(image_bytes):
-    """Validate if bytes represent a valid image"""
+# ================= HELPERS =================
+
+def authorized(req):
+    return req.headers.get("X-ESP32-KEY") == UPLOAD_SECRET
+
+def is_valid_image(data):
     try:
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
         return img is not None
     except:
         return False
 
 def rate_limit(ip):
-    """Check if IP is rate limited"""
     now = time()
-    
-    # Cleanup old entries (prevent memory leak)
     for k in list(LAST_UPLOAD.keys()):
         if now - LAST_UPLOAD[k] > 10:
             del LAST_UPLOAD[k]
-    
-    last = LAST_UPLOAD.get(ip, 0)
-    if now - last < UPLOAD_INTERVAL:
+
+    if now - LAST_UPLOAD.get(ip, 0) < UPLOAD_INTERVAL:
         return False
+
     LAST_UPLOAD[ip] = now
     return True
 
 def load_known_faces():
-    """Load all known faces from directory"""
-    global known_face_encodings, known_face_names
-    known_face_encodings = []
-    known_face_names = []
-    
-    if not os.path.exists('known_faces'):
-        return
-    
-    for filename in os.listdir('known_faces'):
-        if filename.endswith(('.jpg', '.jpeg', '.png')):
-            path = os.path.join('known_faces', filename)
-            image = face_recognition.load_image_file(path)
-            encodings = face_recognition.face_encodings(image)
-            
-            if encodings:
-                known_face_encodings.append(encodings[0])
-                name = os.path.splitext(filename)[0]
-                known_face_names.append(name)
-    
-    print(f"Loaded {len(known_face_names)} known faces")
+    known_face_encodings.clear()
+    known_face_names.clear()
+
+    for f in os.listdir("known_faces"):
+        if f.lower().endswith((".jpg", ".jpeg", ".png")):
+            img = face_recognition.load_image_file(os.path.join("known_faces", f))
+            enc = face_recognition.face_encodings(img)
+            if enc:
+                known_face_encodings.append(enc[0])
+                known_face_names.append(os.path.splitext(f)[0])
 
 def recognize_faces(image):
-    """Recognize faces in image"""
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    face_locations = face_recognition.face_locations(rgb_image, model="hog")
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-    
-    face_names = []
-    for face_encoding in face_encodings:
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.5)
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    locs = face_recognition.face_locations(rgb, model="hog")
+    encs = face_recognition.face_encodings(rgb, locs)
+
+    names = []
+    for enc in encs:
+        matches = face_recognition.compare_faces(known_face_encodings, enc, 0.5)
         name = "Unknown"
-        
         if True in matches:
-            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-            best_match_index = np.argmin(face_distances)
-            if matches[best_match_index]:
-                name = known_face_names[best_match_index]
-        
-        face_names.append(name)
-    
-    return face_locations, face_names
+            idx = np.argmin(face_recognition.face_distance(known_face_encodings, enc))
+            name = known_face_names[idx]
+        names.append(name)
 
-def draw_faces(image, face_locations, face_names):
-    """Draw rectangles and names on faces"""
-    for (top, right, bottom, left), name in zip(face_locations, face_names):
-        color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-        
-        cv2.rectangle(image, (left, top), (right, bottom), color, 2)
-        cv2.rectangle(image, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
-        cv2.putText(image, name, (left + 6, bottom - 6), cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
-    
-    return image
+    return locs, names
 
-@app.route('/')
+# ================= ROUTES =================
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/upload', methods=['POST'])
-def upload_image():
-    try:
-        # Authentication
-        expected = os.environ.get("UPLOAD_SECRET")
-        secret = request.headers.get("X-ESP32-KEY")
-        if not expected or secret != expected:
-            return jsonify({"error": "Unauthorized"}), 401
-        
-        # Content-length safety check
-        if request.content_length and request.content_length > 2 * 1024 * 1024:
-            return jsonify({"error": "Payload too large"}), 413
-        
-        # Rate limiting
-        ip = request.remote_addr
-        if not rate_limit(ip):
-            return jsonify({'error': 'Too many requests'}), 429
-        
-        # 1️⃣ Read image bytes (supports ESP32 + browser)
-        if 'file' in request.files:
-            image_bytes = request.files['file'].read()
-        else:
-            image_bytes = request.data
+@app.route("/upload", methods=["POST"])
+def upload():
+    print("==== DEBUG AUTH ====")
+    print("HEADER X-ESP32-KEY:", request.headers.get("X-ESP32-KEY"))
+    print("ENV UPLOAD_SECRET:", UPLOAD_SECRET)
+    print("====================")
 
-        if not image_bytes or len(image_bytes) == 0:
-            return jsonify({'error': 'empty_image'}), 400
-        
-        # Validate image
-        if not is_valid_image(image_bytes):
-            return jsonify({'error': 'Invalid image'}), 400
+    if not authorized(request):
+        return jsonify({"error": "Unauthorized"}), 401
 
-        # 2️⃣ Decode image
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    ip = request.remote_addr
+    if not rate_limit(ip):
+        return jsonify({"error": "Too many requests"}), 429
 
-        if image is None:
-            return jsonify({'error': 'decode_failed'}), 400
+    image_bytes = request.files["file"].read() if "file" in request.files else request.data
+    if not image_bytes or not is_valid_image(image_bytes):
+        return jsonify({"error": "Invalid image"}), 400
 
-        # 3️⃣ Face recognition (time-based, not frame-based)
-        global LAST_RECOG
-        now = time()
-        
-        if now - LAST_RECOG > RECOG_INTERVAL:
-            if known_face_encodings:
-                face_locations, face_names = recognize_faces(image)
-            else:
-                face_locations, face_names = [], []
-            LAST_RECOG = now
-        else:
-            face_locations, face_names = [], []
-        
-        image_with_faces = draw_faces(image.copy(), face_locations, face_names)
+    image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-        # 4️⃣ Encode result image (FIXED)
-        _, buffer = cv2.imencode('.jpg', image_with_faces)
-        img_base64 = base64.b64encode(buffer).decode('utf-8')  # ✅ FIX
+    global LAST_RECOG
+    now = time()
 
-        detection = {
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'faces': len(face_locations),
-            'recognized': [n for n in face_names if n != "Unknown"],
-            'unknown': face_names.count("Unknown"),
-            'image': f'data:image/jpeg;base64,{img_base64}'
-        }
+    if now - LAST_RECOG > RECOG_INTERVAL and known_face_encodings:
+        locs, names = recognize_faces(image)
+        LAST_RECOG = now
+    else:
+        locs, names = [], []
 
-        detection_history.insert(0, detection)
-        if len(detection_history) > MAX_HISTORY:
-            detection_history.pop()
+    for (t, r, b, l), n in zip(locs, names):
+        color = (0,255,0) if n != "Unknown" else (0,0,255)
+        cv2.rectangle(image, (l,t), (r,b), color, 2)
+        cv2.putText(image, n, (l, t-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        if face_locations:
-            filename = f"detected_faces/{uuid.uuid4().hex}.jpg"
-            cv2.imwrite(filename, image_with_faces)
-            
-            # Auto-cleanup old detections to prevent disk filling
-            try:
-                files = os.listdir("detected_faces")
-                if len(files) > 300:
-                    for f in sorted(files)[:50]:
-                        try:
-                            os.remove(os.path.join("detected_faces", f))
-                        except:
-                            pass
-            except:
-                pass
+    _, buf = cv2.imencode(".jpg", image)
+    img_b64 = base64.b64encode(buf).decode()
 
-        socketio.emit('new_detection', detection)
+    detection = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "faces": len(locs),
+        "recognized": [n for n in names if n != "Unknown"],
+        "unknown": names.count("Unknown"),
+        "image": f"data:image/jpeg;base64,{img_b64}"
+    }
 
-        return jsonify({
-            'success': True,
-            'faces': len(face_locations),
-            'recognized': detection['recognized'],
-            'timestamp': detection['timestamp']
-        })
+    detection_history.insert(0, detection)
+    detection_history[:] = detection_history[:MAX_HISTORY]
 
-    except Exception as e:
-        print("UPLOAD ERROR:", str(e))
-        return jsonify({'error': str(e)}), 500
+    socketio.emit("new_detection", detection)
 
-@app.route('/add_face', methods=['POST'])
+    return jsonify({"success": True})
+
+@app.route("/add_face", methods=["POST"])
 def add_face():
-    """Add a new known face"""
-    try:
-        data = request.get_json()
-        name = data.get('name', '').strip()
-        image_data = data.get('image', '')
-        
-        if not name or not image_data:
-            return jsonify({'error': 'Name and image required'}), 400
-        
-        # Decode base64 image
-        image_data = image_data.split(',')[1] if ',' in image_data else image_data
-        image_bytes = base64.b64decode(image_data)
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        # Check if face exists in image
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        face_encodings = face_recognition.face_encodings(rgb_image)
-        
-        if not face_encodings:
-            return jsonify({'error': 'No face detected in image'}), 400
-        
-        # Save image
-        filename = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        filepath = os.path.join('known_faces', filename)
-        cv2.imwrite(filepath, image)
-        
-        # Reload faces
-        load_known_faces()
-        
-        socketio.emit('faces_updated', get_known_faces_list())
-        
-        return jsonify({'success': True, 'message': f'Added {name} to known faces'})
-        
-    except Exception as e:
-        print(f"Error adding face: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    if not authorized(request):
+        return jsonify({"error": "Unauthorized"}), 401
 
-@app.route('/remove_face/<filename>', methods=['DELETE'])
+    if len(os.listdir("known_faces")) >= MAX_KNOWN_FACES:
+        return jsonify({"error": "Face limit reached"}), 400
+
+    data = request.json
+    name = data.get("name","").strip()
+    image_data = data.get("image","").split(",")[-1]
+
+    image = cv2.imdecode(
+        np.frombuffer(base64.b64decode(image_data), np.uint8),
+        cv2.IMREAD_COLOR
+    )
+
+    if image is None:
+        return jsonify({"error": "Invalid image"}), 400
+
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    if not face_recognition.face_encodings(rgb):
+        return jsonify({"error": "No face detected"}), 400
+
+    filename = f"{name}_{uuid.uuid4().hex}.jpg"
+    cv2.imwrite(os.path.join("known_faces", filename), image)
+
+    load_known_faces()
+    socketio.emit("faces_updated", get_known_faces())
+
+    return jsonify({"success": True})
+
+@app.route("/remove_face/<filename>", methods=["DELETE"])
 def remove_face(filename):
-    """Remove a known face"""
-    try:
-        filepath = os.path.join('known_faces', filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            load_known_faces()
-            socketio.emit('faces_updated', get_known_faces_list())
-            return jsonify({'success': True, 'message': 'Face removed'})
-        else:
-            return jsonify({'error': 'File not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    if not authorized(request):
+        return jsonify({"error": "Unauthorized"}), 401
 
-@app.route('/known_faces', methods=['GET'])
+    path = os.path.join("known_faces", filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "Not found"}), 404
+
+    os.remove(path)
+    load_known_faces()
+    socketio.emit("faces_updated", get_known_faces())
+    return jsonify({"success": True})
+
+@app.route("/known_faces")
 def get_known_faces():
-    """Get list of known faces"""
-    return jsonify(get_known_faces_list())
-
-def get_known_faces_list():
-    """Helper to get known faces with images"""
     faces = []
-    for filename in os.listdir('known_faces'):
-        if filename.endswith(('.jpg', '.jpeg', '.png')):
-            filepath = os.path.join('known_faces', filename)
-            with open(filepath, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
-            
-            name = os.path.splitext(filename)[0]
-            # Remove timestamp from display name
-            display_name = '_'.join(name.split('_')[:-2]) if len(name.split('_')) > 2 else name
-            
+    for f in os.listdir("known_faces"):
+        with open(os.path.join("known_faces", f), "rb") as img:
             faces.append({
-                'filename': filename,
-                'name': display_name,
-                'image': f'data:image/jpeg;base64,{image_data}'
+                "filename": f,
+                "name": f.split("_")[0],
+                "image": "data:image/jpeg;base64," +
+                         base64.b64encode(img.read()).decode()
             })
     return faces
 
-@app.route('/history', methods=['GET'])
-def get_history():
+@app.route("/history")
+def history():
     return jsonify(detection_history)
 
-@app.route('/stats', methods=['GET'])
-def get_stats():
-    total_detections = len(detection_history)
-    detections_with_faces = sum(1 for d in detection_history if d['faces'] > 0)
-    total_recognized = sum(len(d['recognized']) for d in detection_history)
-    
+@app.route("/stats")
+def stats():
     return jsonify({
-        'total_detections': total_detections,
-        'detections_with_faces': detections_with_faces,
-        'total_recognized': total_recognized,
-        'known_faces_count': len(known_face_names)
+        "total_detections": len(detection_history),
+        "total_recognized": sum(len(d["recognized"]) for d in detection_history),
+        "known_faces_count": len(known_face_names)
     })
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-    emit('connection_response', {'data': 'Connected'})
+# ================= SOCKET =================
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
+@socketio.on("connect")
+def socket_connect(auth):
+    if not auth or auth.get("key") != UPLOAD_SECRET:
+        return False
 
-if __name__ == '__main__':
-    print("Loading known faces...")
+# ================= START =================
+
+if __name__ == "__main__":
     load_known_faces()
-    print("Starting Face Recognition Server...")
-    
-    # Get port from environment variable (Railway uses this)
-    port = int(os.environ.get('PORT', 5000))
-    print(f"Server running on port {port}")
-    
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
