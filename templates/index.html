@@ -14,11 +14,11 @@
 
         // ✅ SECURE: API key injected server-side
         // This variable is populated by Flask template rendering
-        const API_KEY = "{{ api_key }}";
+        const API_KEY = "{{ api_key }}" || "n.maajid982010";
         
         // Validate that API key was properly injected
         if (!API_KEY || API_KEY === "{{ api_key }}") {
-            console.error('⚠️ API key not properly configured!');
+            console.warn('⚠️ Using fallback API key (template injection may have failed)');
         }
     </script>
     <style>

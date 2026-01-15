@@ -121,7 +121,7 @@ def recognize_faces(image):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", api_key=UPLOAD_SECRET)
 
 @app.route("/upload", methods=["POST"])
 def upload():
