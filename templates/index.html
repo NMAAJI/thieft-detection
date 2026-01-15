@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition Dashboard</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
     <script>
         const SERVER_URL = window.location.hostname === 'localhost'
             ? 'http://localhost:5000'
@@ -631,19 +632,9 @@
         }
 
         function playSound() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            
-            osc.frequency.value = 800;
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-            
-            osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + 0.5);
+            const alertSound = document.getElementById('alertSound');
+            alertSound.currentTime = 0;
+            alertSound.play().catch(() => {});
         }
 
         function updateStats() {
@@ -828,6 +819,42 @@
                     }).join('');
                 });
         }
+    </script>
+
+    <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
+
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+
+    <script>
+    const socket = io();
+    const alertSound = document.getElementById("alertSound");
+
+    // REQUIRED: user interaction unlocks audio
+    let audioUnlocked = false;
+
+    document.body.addEventListener("click", () => {
+        if (!audioUnlocked) {
+            alertSound.play().then(() => {
+                alertSound.pause();
+                alertSound.currentTime = 0;
+                audioUnlocked = true;
+                console.log("🔓 Audio unlocked");
+            }).catch(err => {
+                console.log("Audio unlock failed", err);
+            });
+        }
+    });
+
+    socket.on("new_detection", data => {
+        console.log("Detection event:", data);
+
+        if (data.recognized && data.recognized.length > 0 && audioUnlocked) {
+            alertSound.currentTime = 0;
+            alertSound.play().catch(err => {
+                console.log("Sound play error:", err);
+            });
+        }
+    });
     </script>
 </body>
 </html>

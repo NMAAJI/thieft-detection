@@ -8,7 +8,6 @@ import base64
 import json
 import os
 import face_recognition
-import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -81,48 +80,6 @@ def draw_faces(image, face_locations, face_names):
     
     return image
 
-def send_email_alert(names, timestamp):
-    try:
-        api_key = os.environ.get("RESEND_API_KEY")
-        sender = os.environ.get("ALERT_EMAIL_FROM")
-        receiver = os.environ.get("ALERT_EMAIL_TO")
-
-        if not api_key:
-            print("Resend API key missing")
-            return
-
-        payload = {
-            "from": sender,
-            "to": [receiver],
-            "subject": "🚨 KNOWN PERSON DETECTED",
-            "text": f"""
-Known person detected!
-
-Names: {", ".join(names)}
-Time: {timestamp}
-
-Thief Detection System
-"""
-        }
-
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json=payload,
-            timeout=10
-        )
-
-        if response.status_code in (200, 201):
-            print("✅ Email sent via Resend")
-        else:
-            print("❌ Resend error:", response.status_code, response.text)
-
-    except Exception as e:
-        print("❌ Email exception:", e)
-
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -150,11 +107,6 @@ def upload_image():
         face_locations, face_names = recognize_faces(image)
         
         recognized_names = [n for n in face_names if n != "Unknown"]
-        if recognized_names:
-            send_email_alert(
-                recognized_names,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            )
         
         image_with_faces = draw_faces(image.copy(), face_locations, face_names)
 
