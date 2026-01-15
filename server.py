@@ -8,6 +8,8 @@ import base64
 import json
 import os
 import face_recognition
+import smtplib
+from email.mime.text import MIMEText
 
 app = Flask(__name__)
 CORS(app)
@@ -80,6 +82,41 @@ def draw_faces(image, face_locations, face_names):
     
     return image
 
+def send_email_alert(names, timestamp):
+    try:
+        sender = os.environ.get("ALERT_EMAIL_FROM")
+        password = os.environ.get("ALERT_EMAIL_PASSWORD")
+        receiver = os.environ.get("ALERT_EMAIL_TO")
+
+        if not sender or not password or not receiver:
+            print("Email alert skipped (missing env vars)")
+            return
+
+        subject = "🚨 KNOWN PERSON DETECTED"
+        body = f"""
+KNOWN PERSON DETECTED
+
+Names: {", ".join(names)}
+Time: {timestamp}
+
+Thief Detection System
+"""
+
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = receiver
+
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        server.login(sender, password)
+        server.send_message(msg)
+        server.quit()
+
+        print("Email alert sent")
+
+    except Exception as e:
+        print("Email alert error:", e)
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -105,6 +142,14 @@ def upload_image():
 
         # 3️⃣ Face recognition
         face_locations, face_names = recognize_faces(image)
+        
+        recognized_names = [n for n in face_names if n != "Unknown"]
+        if recognized_names:
+            send_email_alert(
+                recognized_names,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            )
+        
         image_with_faces = draw_faces(image.copy(), face_locations, face_names)
 
         # 4️⃣ Encode result image (FIXED)
