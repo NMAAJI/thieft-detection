@@ -83,15 +83,19 @@ def draw_faces(image, face_locations, face_names):
 
 def send_email_alert(names, timestamp):
     try:
-        api_key = os.environ.get("BREVO_API_KEY")
+        api_key = os.environ.get("RESEND_API_KEY")
         sender = os.environ.get("ALERT_EMAIL_FROM")
         receiver = os.environ.get("ALERT_EMAIL_TO")
 
+        if not api_key:
+            print("Resend API key missing")
+            return
+
         payload = {
-            "sender": {"email": sender},
-            "to": [{"email": receiver}],
+            "from": sender,
+            "to": [receiver],
             "subject": "🚨 KNOWN PERSON DETECTED",
-            "textContent": f"""
+            "text": f"""
 Known person detected!
 
 Names: {", ".join(names)}
@@ -102,21 +106,22 @@ Thief Detection System
         }
 
         response = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
+            "https://api.resend.com/emails",
             headers={
-                "api-key": api_key,
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             },
-            json=payload
+            json=payload,
+            timeout=10
         )
 
-        if response.status_code in [200, 201]:
-            print("Brevo email sent")
+        if response.status_code in (200, 201):
+            print("✅ Email sent via Resend")
         else:
-            print("Brevo error:", response.text)
+            print("❌ Resend error:", response.status_code, response.text)
 
     except Exception as e:
-        print("Email error:", e)
+        print("❌ Email exception:", e)
 
 @app.route('/')
 def index():
