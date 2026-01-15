@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 from flask_socketio import SocketIO
 from flask_cors import CORS
+from flask_session import Session
 import cv2
 import numpy as np
 from datetime import datetime
@@ -23,6 +24,17 @@ MAX_KNOWN_FACES = 100
 # ==============================================
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
+
+app.config.update(
+    SESSION_TYPE="filesystem",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True  # Railway uses HTTPS
+)
+
+Session(app)
+
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 CORS(app, resources={
@@ -117,11 +129,30 @@ def recognize_faces(image):
 
     return locs, names
 
+# ================= MIDDLEWARE =================
+
+@app.before_request
+def secure_web_access():
+    # ESP32 uses header auth
+    if request.headers.get("X-ESP32-KEY"):
+        return
+
+    # Allow static & homepage
+    if request.path in ["/", "/socket.io/"] or request.path.startswith("/static"):
+        session["web_auth"] = True
+        return
+
+    # Protect API routes
+    protected = ["/add_face", "/remove_face", "/known_faces", "/history", "/stats"]
+    if any(request.path.startswith(p) for p in protected):
+        if not session.get("web_auth"):
+            return jsonify({"error": "Unauthorized"}), 401
+
 # ================= ROUTES =================
 
 @app.route("/")
 def index():
-    return render_template("index.html", api_key=UPLOAD_SECRET)
+    return render_template("index.html")
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -254,7 +285,9 @@ def stats():
 
 @socketio.on("connect")
 def socket_connect(auth):
-    if not auth or auth.get("key") != UPLOAD_SECRET:
+    # Web UI is authenticated via session cookie
+    # ESP32-CAM does NOT use socket.io
+    if not session.get("web_auth"):
         return False
 
 # ================= START =================

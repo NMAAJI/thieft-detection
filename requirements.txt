@@ -2,6 +2,7 @@ flask
 flask-socketio
 eventlet
 flask-cors
+flask-session
 opencv-python-headless
 numpy
 face-recognition

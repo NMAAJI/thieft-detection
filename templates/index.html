@@ -12,14 +12,9 @@
             ? 'http://localhost:5000'
             : window.location.origin;
 
-        // ✅ SECURE: API key injected server-side
-        // This variable is populated by Flask template rendering
-        const API_KEY = "{{ api_key }}" || "n.maajid982010";
-        
-        // Validate that API key was properly injected
-        if (!API_KEY || API_KEY === "{{ api_key }}") {
-            console.warn('⚠️ Using fallback API key (template injection may have failed)');
-        }
+        // ✅ SECURE: Session-based authentication
+        // Browser is authenticated via HTTP-only session cookies
+        // API key is never exposed to JavaScript
     </script>
     <style>
         * {
@@ -429,26 +424,340 @@
                 padding: 0 10px;
             }
 
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
+            .header {
+                padding: 15px 0;
             }
 
-            .faces-grid {
-                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            .header h1 {
+                font-size: clamp(1.4em, 4vw, 2em);
+            }
+
+            .header p {
+                font-size: 0.95em;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+
+            .stat-card {
+                padding: 15px;
+            }
+
+            .stat-icon {
+                font-size: 1.5em;
+                margin-bottom: 5px;
+            }
+
+            .stat-value {
+                font-size: 1.5em;
+            }
+
+            .stat-label {
+                font-size: 0.75em;
+            }
+
+            .tabs {
+                gap: 8px;
+                margin: 15px 0;
+            }
+
+            .tab {
+                min-width: 100px;
+                padding: 10px;
+                font-size: 0.85em;
             }
 
             .card {
                 padding: 15px;
+                margin-bottom: 15px;
+                border-radius: 15px;
+            }
+
+            .card-title {
+                font-size: 1.2em;
+                gap: 8px;
+            }
+
+            .faces-grid {
+                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+                gap: 12px;
+            }
+
+            .face-card {
+                padding: 10px;
+            }
+
+            .face-card img {
+                height: 150px;
+                margin-bottom: 8px;
+            }
+
+            .face-name {
+                font-size: 0.95em;
+                margin-bottom: 8px;
+            }
+
+            .btn {
+                padding: 12px 20px;
+                font-size: 0.9em;
+                gap: 8px;
+                width: 100%;
+                justify-content: center;
             }
 
             .upload-area {
-                padding: 30px 15px;
+                padding: 25px 15px;
+                border-radius: 12px;
+            }
+
+            .upload-icon {
+                font-size: 3em;
+                margin-bottom: 10px;
+            }
+
+            .upload-area h3 {
+                font-size: 1.1em;
+                margin-bottom: 5px;
+            }
+
+            .upload-area p {
+                font-size: 0.9em;
+            }
+
+            .upload-section {
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+
+            input[type="text"] {
+                padding: 12px;
+                font-size: 1em;
+                margin-bottom: 12px;
+            }
+
+            .preview-container {
+                margin: 15px 0;
+            }
+
+            .preview-image {
+                max-height: 250px;
+                border-radius: 12px;
+            }
+
+            #liveImage {
+                min-height: 200px;
+                max-height: 400px;
+            }
+
+            .status-bar {
+                padding: 12px;
+                margin-bottom: 15px;
+                gap: 10px;
+            }
+
+            .history-item {
+                padding: 12px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .face-badge {
+                padding: 5px 10px;
+                font-size: 0.8em;
+                margin: 2px 2px 2px 0;
+            }
+
+            .alert {
+                padding: 15px;
+                gap: 12px;
+                margin: 10px 0;
+            }
+
+            .alert-icon {
+                font-size: 1.8em;
+                flex-shrink: 0;
+            }
+
+            .empty-state {
+                padding: 40px 20px;
+            }
+
+            .empty-icon {
+                font-size: 4em;
+            }
+
+            .loader {
+                width: 35px;
+                height: 35px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+            }
+
+            .container {
+                padding: 0 5px;
+            }
+
+            .header h1 {
+                font-size: 1.3em;
+                margin-bottom: 5px;
+            }
+
+            .header p {
+                font-size: 0.85em;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+
+            .stat-card {
+                padding: 12px;
+            }
+
+            .stat-icon {
+                font-size: 1.3em;
+            }
+
+            .stat-value {
+                font-size: 1.3em;
+                margin: 5px 0;
+            }
+
+            .stat-label {
+                font-size: 0.7em;
+            }
+
+            .tabs {
+                gap: 5px;
+                margin: 10px 0;
             }
 
             .tab {
-                min-width: 120px;
+                min-width: 80px;
+                padding: 8px 10px;
+                font-size: 0.75em;
+            }
+
+            .tab:hover {
+                transform: none;
+            }
+
+            .card {
                 padding: 12px;
+                margin-bottom: 12px;
+                border-radius: 12px;
+            }
+
+            .card-title {
+                font-size: 1.1em;
+                margin-bottom: 15px;
+            }
+
+            .faces-grid {
+                grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+                gap: 10px;
+            }
+
+            .face-card {
+                padding: 8px;
+            }
+
+            .face-card img {
+                height: 120px;
+                margin-bottom: 8px;
+            }
+
+            .face-name {
+                font-size: 0.85em;
+                word-break: break-word;
+            }
+
+            .btn {
+                padding: 10px 15px;
+                font-size: 0.85em;
+                gap: 5px;
+            }
+
+            .upload-area {
+                padding: 20px 10px;
+                border-width: 2px;
+            }
+
+            .upload-icon {
+                font-size: 2.5em;
+                margin-bottom: 8px;
+            }
+
+            .upload-area h3 {
+                font-size: 1em;
+                margin-bottom: 3px;
+            }
+
+            .upload-area p {
+                font-size: 0.8em;
+                display: none;
+            }
+
+            .upload-section {
+                padding: 12px;
+            }
+
+            input[type="text"] {
+                padding: 10px;
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+
+            #liveImage {
+                min-height: 180px;
+                max-height: 350px;
+            }
+
+            .status-bar {
+                padding: 10px;
                 font-size: 0.9em;
+            }
+
+            .history-item {
+                padding: 10px;
+            }
+
+            .timestamp {
+                font-size: 0.8em;
+                margin-top: 5px;
+            }
+
+            .empty-state {
+                padding: 30px 15px;
+            }
+
+            .empty-icon {
+                font-size: 3em;
+                margin-bottom: 10px;
+            }
+
+            .alert {
+                padding: 12px;
+                gap: 10px;
+            }
+
+            .alert-icon {
+                font-size: 1.5em;
+            }
+
+            .face-badge {
+                padding: 4px 8px;
+                font-size: 0.75em;
+                margin: 2px 2px 2px 0;
             }
         }
 
@@ -562,8 +871,7 @@
     <script>
         const socket = io(SERVER_URL, {
             transports: ['websocket'],
-            upgrade: false,
-            auth: { key: API_KEY }
+            upgrade: false
         });
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
@@ -681,9 +989,7 @@
         }
 
         function loadStats() {
-            fetch(`${SERVER_URL}/stats`, {
-                headers: { 'X-ESP32-KEY': API_KEY }
-            })
+            fetch(`${SERVER_URL}/stats`)
                 .then(r => r.json())
                 .then(data => {
                     stats.total = data.total_detections;
@@ -756,8 +1062,7 @@
                 fetch(`${SERVER_URL}/add_face`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'X-ESP32-KEY': API_KEY
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         name: name,
@@ -787,9 +1092,7 @@
         }
 
         function loadKnownFaces() {
-            fetch(`${SERVER_URL}/known_faces`, {
-                headers: { 'X-ESP32-KEY': API_KEY }
-            })
+            fetch(`${SERVER_URL}/known_faces`)
                 .then(r => r.json())
                 .then(displayKnownFaces);
         }
@@ -822,8 +1125,7 @@
             if (!confirm('Remove this face from database?')) return;
             
             fetch(`${SERVER_URL}/remove_face/${filename}`, {
-                method: 'DELETE',
-                headers: { 'X-ESP32-KEY': API_KEY }
+                method: 'DELETE'
             })
                 .then(r => r.json())
                 .then(data => {
@@ -834,9 +1136,7 @@
         }
 
         function loadHistory() {
-            fetch(`${SERVER_URL}/history`, {
-                headers: { 'X-ESP32-KEY': API_KEY }
-            })
+            fetch(`${SERVER_URL}/history`)
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('historyContainer');
