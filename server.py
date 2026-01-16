@@ -141,25 +141,25 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_all():
-    # Allow ESP32 uploads
-    if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
+    # ✅ ALWAYS allow CORS preflight
+    if request.method == "OPTIONS":
+        return "", 200
+
+    # ✅ ESP32 upload ONLY via header
+    if request.path == "/upload":
+        if request.headers.get("X-ESP32-KEY"):
+            return
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # ✅ Allow login/logout
+    if request.path in ["/login", "/logout"]:
         return
 
-    # Allow login page
-    if request.path == "/login":
-        return
-
-    # Allow static files
+    # ✅ Allow static files
     if request.path.startswith("/static"):
         return
 
-    # Allow socket.io for authenticated users
-    if request.path.startswith("/socket.io"):
-        if session.get("web_auth"):
-            return
-        return {"error": "Unauthorized"}, 401
-
-    # Block everything else if not authenticated
+    # 🔐 Everything else requires login
     if not session.get("web_auth"):
         return redirect("/login")
 
@@ -168,13 +168,14 @@ def secure_all():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        data = request.form
-        username = data.get("username", "")
-        password = data.get("password", "")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
 
-        if username == WEB_USERNAME and check_password_hash(WEB_PASSWORD_HASH, password):
+        if username == WEB_USERNAME and password == WEB_PASSWORD:
+            session.clear()
             session["web_auth"] = True
             return redirect("/")
+
         return render_template("login.html", error="Invalid credentials")
 
     return render_template("login.html")
