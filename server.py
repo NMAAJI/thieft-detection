@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify, render_template, session
+from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
 from flask_session import Session
+from werkzeug.security import generate_password_hash, check_password_hash
 import cv2
 import numpy as np
 from datetime import datetime
@@ -21,6 +22,12 @@ UPLOAD_INTERVAL = 3.0
 RECOG_INTERVAL = 2.0
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
+
+# ================= WEB LOGIN CONFIG =================
+WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
+WEB_PASSWORD_HASH = generate_password_hash(
+    os.environ.get("WEB_PASSWORD", "admin123")
+)
 # ==============================================
 
 app = Flask(__name__)
@@ -29,7 +36,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
 app.config.update(
     SESSION_TYPE="filesystem",
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SAMESITE="Strict",
     SESSION_COOKIE_SECURE=True  # Railway uses HTTPS
 )
 
@@ -140,23 +147,39 @@ def recognize_faces(image):
 # ================= MIDDLEWARE =================
 
 @app.before_request
-def secure_web_access():
-    # ESP32 uses header auth (only for /upload)
+def secure_all():
+    # Allow ESP32 uploads
     if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
         return
 
-    # Allow static & homepage
-    if request.path in ["/", "/socket.io/"] or request.path.startswith("/static"):
-        session["web_auth"] = True
+    # Allow static files + login page
+    if request.path.startswith("/static") or request.path in ["/login"]:
         return
 
-    # Protect API routes
-    protected = ["/add_face", "/remove_face", "/known_faces", "/history", "/stats"]
-    if any(request.path.startswith(p) for p in protected):
-        if not session.get("web_auth"):
-            return jsonify({"error": "Unauthorized"}), 401
+    # Block everything else if not authenticated
+    if not session.get("web_auth"):
+        return redirect("/login")
 
 # ================= ROUTES =================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        data = request.form
+        username = data.get("username", "")
+        password = data.get("password", "")
+
+        if username == WEB_USERNAME and check_password_hash(WEB_PASSWORD_HASH, password):
+            session["web_auth"] = True
+            return redirect("/")
+        return render_template("login.html", error="Invalid credentials")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 @app.route("/")
 def index():
