@@ -141,11 +141,15 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_all():
-    # Allow ESP32 uploads
-    if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
+    # ✅ Allow ESP32 preflight (OPTIONS) for upload
+    if request.method == "OPTIONS" and request.path == "/upload":
+        return "", 200
+
+    # ✅ Allow ESP32 upload with header key
+    if request.path == "/upload" and request.headers.get("X-ESP32-KEY"):
         return
 
-    # Allow login and logout pages
+    # Allow login and logout
     if request.path in ["/login", "/logout"]:
         return
 
@@ -153,13 +157,13 @@ def secure_all():
     if request.path.startswith("/static"):
         return
 
-    # Allow socket.io for authenticated users
+    # Allow socket.io only if logged in
     if request.path.startswith("/socket.io"):
         if session.get("web_auth"):
             return
         return {"error": "Unauthorized"}, 401
 
-    # Block everything else if not authenticated
+    # Everything else requires login
     if not session.get("web_auth"):
         return redirect("/login")
 
