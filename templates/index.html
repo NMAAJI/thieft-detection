@@ -989,7 +989,9 @@
         }
 
         function loadStats() {
-            fetch(`${SERVER_URL}/stats`)
+            fetch(`${SERVER_URL}/stats`, {
+                credentials: "include"
+            })
                 .then(r => r.json())
                 .then(data => {
                     stats.total = data.total_detections;
@@ -1061,6 +1063,7 @@
             reader.onload = (e) => {
                 fetch(`${SERVER_URL}/add_face`, {
                     method: 'POST',
+                    credentials: "include",
                     headers: {
                         'Content-Type': 'application/json'
                     },
@@ -1092,7 +1095,9 @@
         }
 
         function loadKnownFaces() {
-            fetch(`${SERVER_URL}/known_faces`)
+            fetch(`${SERVER_URL}/known_faces`, {
+                credentials: "include"
+            })
                 .then(r => r.json())
                 .then(displayKnownFaces);
         }
@@ -1125,7 +1130,8 @@
             if (!confirm('Remove this face from database?')) return;
             
             fetch(`${SERVER_URL}/remove_face/${filename}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                credentials: "include"
             })
                 .then(r => r.json())
                 .then(data => {
@@ -1136,7 +1142,9 @@
         }
 
         function loadHistory() {
-            fetch(`${SERVER_URL}/history`)
+            fetch(`${SERVER_URL}/history`, {
+                credentials: "include"
+            })
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('historyContainer');
