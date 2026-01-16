@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
-from flask_session import Session
 from werkzeug.security import generate_password_hash, check_password_hash
 import cv2
 import numpy as np
@@ -25,22 +24,24 @@ MAX_KNOWN_FACES = 100
 
 # ================= WEB LOGIN CONFIG =================
 WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
-WEB_PASSWORD_HASH = generate_password_hash(
-    os.environ.get("WEB_PASSWORD", "admin123")
-)
+WEB_PASSWORD_HASH = os.environ.get("WEB_PASSWORD_HASH")
+
+if not WEB_PASSWORD_HASH:
+    raise RuntimeError(
+        "WEB_PASSWORD_HASH not set in environment variables. "
+        "Please set it to a werkzeug password hash. "
+        "For development: pbkdf2:sha256:600000$p6N...etc (see docs)"
+    )
 # ==============================================
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
 
 app.config.update(
-    SESSION_TYPE="filesystem",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
     SESSION_COOKIE_SECURE=True  # Railway uses HTTPS
 )
-
-Session(app)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -152,8 +153,8 @@ def secure_all():
     if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
         return
 
-    # Allow login page
-    if request.path == "/login":
+    # Allow login and logout pages
+    if request.path in ["/login", "/logout"]:
         return
 
     # Allow static files
