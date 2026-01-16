@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
-from werkzeug.security import generate_password_hash, check_password_hash
 import cv2
 import numpy as np
 from datetime import datetime
@@ -24,14 +23,7 @@ MAX_KNOWN_FACES = 100
 
 # ================= WEB LOGIN CONFIG =================
 WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
-WEB_PASSWORD_HASH = os.environ.get("WEB_PASSWORD_HASH")
-
-if not WEB_PASSWORD_HASH:
-    raise RuntimeError(
-        "WEB_PASSWORD_HASH not set in environment variables. "
-        "Please set it to a werkzeug password hash. "
-        "For development: pbkdf2:sha256:600000$p6N...etc (see docs)"
-    )
+WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "982010")
 # ==============================================
 
 app = Flask(__name__)
@@ -176,13 +168,13 @@ def secure_all():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        data = request.form
-        username = data.get("username", "")
-        password = data.get("password", "")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
 
-        if username == WEB_USERNAME and check_password_hash(WEB_PASSWORD_HASH, password):
+        if username == WEB_USERNAME and password == WEB_PASSWORD:
             session["web_auth"] = True
             return redirect("/")
+
         return render_template("login.html", error="Invalid credentials")
 
     return render_template("login.html")
