@@ -78,9 +78,17 @@ LAST_RECOG = 0
 
 # ================= HELPERS =================
 
-def authorized(req):
+def api_authorized(req):
+    # ESP32 auth
     key = req.headers.get("X-ESP32-KEY", "")
-    return key.strip() == UPLOAD_SECRET.strip()
+    if key and key.strip() == UPLOAD_SECRET.strip():
+        return True
+
+    # Web auth (session cookie)
+    if session.get("web_auth"):
+        return True
+
+    return False
 
 def is_valid_image(data):
     try:
@@ -133,8 +141,8 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_web_access():
-    # ESP32 uses header auth
-    if request.headers.get("X-ESP32-KEY"):
+    # ESP32 uses header auth (only for /upload)
+    if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
         return
 
     # Allow static & homepage
@@ -161,7 +169,9 @@ def upload():
     print("ENV UPLOAD_SECRET:", UPLOAD_SECRET)
     print("====================")
 
-    if not authorized(request):
+    # /upload is ESP32-only (no session auth)
+    key = request.headers.get("X-ESP32-KEY", "")
+    if key.strip() != UPLOAD_SECRET.strip():
         return jsonify({"error": "Unauthorized"}), 401
 
     ip = request.remote_addr
@@ -209,7 +219,7 @@ def upload():
 
 @app.route("/add_face", methods=["POST"])
 def add_face():
-    if not authorized(request):
+    if not api_authorized(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     if len(os.listdir("known_faces")) >= MAX_KNOWN_FACES:
@@ -241,7 +251,7 @@ def add_face():
 
 @app.route("/remove_face/<filename>", methods=["DELETE"])
 def remove_face(filename):
-    if not authorized(request):
+    if not api_authorized(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     path = os.path.join("known_faces", filename)
