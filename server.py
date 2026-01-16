@@ -141,15 +141,15 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_all():
-    # ✅ Allow ESP32 preflight (OPTIONS) for upload
-    if request.method == "OPTIONS" and request.path == "/upload":
+    # ✅ Allow all CORS preflight
+    if request.method == "OPTIONS":
         return "", 200
 
     # ✅ Allow ESP32 upload with header key
     if request.path == "/upload" and request.headers.get("X-ESP32-KEY"):
         return
 
-    # Allow login and logout
+    # Allow login/logout
     if request.path in ["/login", "/logout"]:
         return
 
@@ -176,6 +176,7 @@ def login():
         password = request.form.get("password", "")
 
         if username == WEB_USERNAME and password == WEB_PASSWORD:
+            session.clear()
             session["web_auth"] = True
             return redirect("/")
 
