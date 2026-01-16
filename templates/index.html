@@ -833,7 +833,7 @@
                         <div class="upload-icon">📸</div>
                         <h3>Click or Drag to Upload</h3>
                         <p>Upload a clear photo of the person's face</p>
-                        <input type="file" id="fileInput" accept="image/*" capture="environment">
+                        <input type="file" id="fileInput" accept="image/*">
                     </div>
                     
                     <div id="previewContainer" class="preview-container" style="display:none;">
@@ -1034,36 +1034,73 @@
         function handleFile(file) {
             if (!file) return;
 
+            // File size validation (max 10MB)
+            const maxFileSize = 10 * 1024 * 1024;
+            if (file.size > maxFileSize) {
+                alert('❌ File too large (max 10MB). Will compress...');
+            }
+
+            // Show processing feedback
+            uploadBtn.innerHTML = '<span>⏳</span> Processing image...';
+            uploadBtn.disabled = true;
+
             const img = new Image();
             const reader = new FileReader();
 
+            reader.onerror = () => {
+                alert('❌ Failed to read file');
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+            };
+
             reader.onload = e => {
-                img.onload = () => {
-                    const canvas = document.createElement("canvas");
-                    const ctx = canvas.getContext("2d");
-
-                    // Resize for speed & compatibility
-                    const maxSize = 640;
-                    let { width, height } = img;
-
-                    if (width > maxSize || height > maxSize) {
-                        const scale = Math.min(maxSize / width, maxSize / height);
-                        width *= scale;
-                        height *= scale;
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    const base64 = canvas.toDataURL("image/jpeg", 0.9);
-
-                    // preview
-                    previewImage.src = base64;
-                    previewContainer.style.display = "block";
-
-                    selectedFile = base64;
+                img.onerror = () => {
+                    alert('❌ Invalid image file');
                     uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+                };
+
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement("canvas");
+                        const ctx = canvas.getContext("2d");
+
+                        // Adaptive sizing based on file size
+                        let maxSize = 640;
+                        if (file.size > 5 * 1024 * 1024) maxSize = 480; // Compress more if large
+                        
+                        let { width, height } = img;
+
+                        if (width > maxSize || height > maxSize) {
+                            const scale = Math.min(maxSize / width, maxSize / height);
+                            width *= scale;
+                            height *= scale;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Adaptive quality based on size
+                        const quality = file.size > 5 * 1024 * 1024 ? 0.75 : 0.9;
+                        const base64 = canvas.toDataURL("image/jpeg", quality);
+
+                        // Check compressed size
+                        const compressedSize = base64.length / 4 / 1024;
+                        console.log(`Compressed image: ${compressedSize.toFixed(1)}KB`);
+
+                        // preview
+                        previewImage.src = base64;
+                        previewContainer.style.display = "block";
+
+                        selectedFile = base64;
+                        uploadBtn.disabled = false;
+                        uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+                    } catch (err) {
+                        alert('❌ Error processing image: ' + err.message);
+                        uploadBtn.disabled = false;
+                        uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+                    }
                 };
 
                 img.src = e.target.result;
