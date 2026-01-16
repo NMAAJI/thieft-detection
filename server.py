@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
+from flask_session import Session
+from werkzeug.security import generate_password_hash, check_password_hash
 import cv2
 import numpy as np
 from datetime import datetime
@@ -23,17 +25,22 @@ MAX_KNOWN_FACES = 100
 
 # ================= WEB LOGIN CONFIG =================
 WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
-WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "982010")
+WEB_PASSWORD_HASH = generate_password_hash(
+    os.environ.get("WEB_PASSWORD", "admin123")
+)
 # ==============================================
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
 
 app.config.update(
+    SESSION_TYPE="filesystem",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
     SESSION_COOKIE_SECURE=True  # Railway uses HTTPS
 )
+
+Session(app)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -141,31 +148,25 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_all():
-    # Allow all CORS preflight
-    if request.method == "OPTIONS":
-        return "", 200
+    # Allow ESP32 uploads
+    if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
+        return
 
-    # ✅ ESP32 + Simulator upload (header auth only)
-    if request.path.rstrip("/") == "/upload":
-        if request.headers.get("X-ESP32-KEY"):
-            return
-        return jsonify({"error": "Unauthorized"}), 401
-
-    # Allow login/logout
-    if request.path in ["/login", "/logout"]:
+    # Allow login page
+    if request.path == "/login":
         return
 
     # Allow static files
     if request.path.startswith("/static"):
         return
 
-    # Allow socket.io only if logged in
+    # Allow socket.io for authenticated users
     if request.path.startswith("/socket.io"):
         if session.get("web_auth"):
             return
         return {"error": "Unauthorized"}, 401
 
-    # Everything else requires login
+    # Block everything else if not authenticated
     if not session.get("web_auth"):
         return redirect("/login")
 
@@ -174,14 +175,13 @@ def secure_all():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
+        data = request.form
+        username = data.get("username", "")
+        password = data.get("password", "")
 
-        if username == WEB_USERNAME and password == WEB_PASSWORD:
-            session.clear()
+        if username == WEB_USERNAME and check_password_hash(WEB_PASSWORD_HASH, password):
             session["web_auth"] = True
             return redirect("/")
-
         return render_template("login.html", error="Invalid credentials")
 
     return render_template("login.html")
