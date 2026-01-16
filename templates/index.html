@@ -1032,17 +1032,43 @@
         });
 
         function handleFile(file) {
-            if (!file || !file.type.startsWith('image/')) return;
-            
-            selectedFile = file;
+            if (!file) return;
+
+            const img = new Image();
             const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                previewImage.src = e.target.result;
-                previewContainer.style.display = 'block';
-                uploadBtn.disabled = false;
+
+            reader.onload = e => {
+                img.onload = () => {
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    // Resize for speed & compatibility
+                    const maxSize = 640;
+                    let { width, height } = img;
+
+                    if (width > maxSize || height > maxSize) {
+                        const scale = Math.min(maxSize / width, maxSize / height);
+                        width *= scale;
+                        height *= scale;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const base64 = canvas.toDataURL("image/jpeg", 0.9);
+
+                    // preview
+                    previewImage.src = base64;
+                    previewContainer.style.display = "block";
+
+                    selectedFile = base64;
+                    uploadBtn.disabled = false;
+                };
+
+                img.src = e.target.result;
             };
-            
+
             reader.readAsDataURL(file);
         }
 
@@ -1059,39 +1085,34 @@
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<span>⏳</span> Processing...';
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                fetch(`${SERVER_URL}/add_face`, {
-                    method: 'POST',
-                    credentials: "include",
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: name,
-                        image: e.target.result
-                    })
+            fetch(`${SERVER_URL}/add_face`, {
+                method: 'POST',
+                credentials: "include",
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    image: selectedFile
                 })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('✅ Face added successfully!');
-                        personName.value = '';
-                        previewContainer.style.display = 'none';
-                        selectedFile = null;
-                        loadKnownFaces();
-                    } else {
-                        alert('❌ Error: ' + data.error);
-                    }
-                })
-                .catch(err => alert('Error: ' + err))
-                .finally(() => {
-                    uploadBtn.disabled = false;
-                    uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-                });
-            };
-            
-            reader.readAsDataURL(selectedFile);
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Face added successfully!');
+                    personName.value = '';
+                    previewContainer.style.display = 'none';
+                    selectedFile = null;
+                    loadKnownFaces();
+                } else {
+                    alert('❌ Error: ' + data.error);
+                }
+            })
+            .catch(err => alert('Error: ' + err))
+            .finally(() => {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+            });
         }
 
         function loadKnownFaces() {
