@@ -152,9 +152,19 @@ def secure_all():
     if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
         return
 
-    # Allow static files + login page
-    if request.path.startswith("/static") or request.path in ["/login"]:
+    # Allow login page
+    if request.path == "/login":
         return
+
+    # Allow static files
+    if request.path.startswith("/static"):
+        return
+
+    # Allow socket.io for authenticated users
+    if request.path.startswith("/socket.io"):
+        if session.get("web_auth"):
+            return
+        return {"error": "Unauthorized"}, 401
 
     # Block everything else if not authenticated
     if not session.get("web_auth"):
