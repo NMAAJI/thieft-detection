@@ -141,29 +141,31 @@ def recognize_faces(image):
 
 @app.before_request
 def secure_all():
-    # ✅ Allow all CORS preflight
+    # ✅ Allow ALL CORS preflight
     if request.method == "OPTIONS":
         return "", 200
 
-    # ✅ Allow ESP32 upload with header key
-    if request.path == "/upload" and request.headers.get("X-ESP32-KEY"):
-        return
+    # ✅ CRITICAL: Allow ESP32 uploads using header key ONLY
+    if request.path == "/upload":
+        if request.headers.get("X-ESP32-KEY"):
+            return
+        return jsonify({"error": "Unauthorized"}), 401
 
-    # Allow login/logout
+    # ✅ Allow login/logout
     if request.path in ["/login", "/logout"]:
         return
 
-    # Allow static files
+    # ✅ Allow static files
     if request.path.startswith("/static"):
         return
 
-    # Allow socket.io only if logged in
+    # ✅ Allow socket.io only for logged-in users
     if request.path.startswith("/socket.io"):
         if session.get("web_auth"):
             return
         return {"error": "Unauthorized"}, 401
 
-    # Everything else requires login
+    # 🔐 Everything else requires login
     if not session.get("web_auth"):
         return redirect("/login")
 
