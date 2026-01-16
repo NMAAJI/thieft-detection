@@ -1,8 +1,6 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
-from flask_session import Session
-from werkzeug.security import generate_password_hash, check_password_hash
 import cv2
 import numpy as np
 from datetime import datetime
@@ -25,22 +23,17 @@ MAX_KNOWN_FACES = 100
 
 # ================= WEB LOGIN CONFIG =================
 WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
-WEB_PASSWORD_HASH = generate_password_hash(
-    os.environ.get("WEB_PASSWORD", "admin123")
-)
+WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "admin123")
 # ==============================================
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
 
 app.config.update(
-    SESSION_TYPE="filesystem",
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Strict",
-    SESSION_COOKIE_SECURE=True  # Railway uses HTTPS
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True
 )
-
-Session(app)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
