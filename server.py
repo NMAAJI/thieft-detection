@@ -17,6 +17,7 @@ if not UPLOAD_SECRET:
 
 MAX_UPLOAD_MB = 2
 UPLOAD_INTERVAL = 0.5
+RECOG_INTERVAL = 1.0
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
 
@@ -73,6 +74,7 @@ known_face_names = []
 detection_history = []
 
 LAST_UPLOAD = {}
+LAST_RECOG = 0
 
 # ================= HELPERS =================
 
@@ -126,11 +128,16 @@ def recognize_faces(image):
 
     names = []
     for enc in encs:
-        distances = face_recognition.face_distance(known_face_encodings, enc)
-        best_idx = np.argmin(distances)
+        matches = face_recognition.compare_faces(
+            known_face_encodings, enc, tolerance=0.5
+        )
         name = "Unknown"
-        if distances[best_idx] < 0.45:
+
+        if True in matches:
+            distances = face_recognition.face_distance(known_face_encodings, enc)
+            best_idx = np.argmin(distances)
             name = known_face_names[best_idx]
+
         names.append(name)
 
     return locs, names
@@ -209,8 +216,12 @@ def upload():
 
     image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    if known_face_encodings:
+    global LAST_RECOG
+    now = time()
+
+    if known_face_encodings and (now - LAST_RECOG) >= RECOG_INTERVAL:
         locs, names = recognize_faces(image)
+        LAST_RECOG = now
     else:
         locs, names = [], []
 
