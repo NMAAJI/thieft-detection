@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
-from flask_wtf.csrf import CSRFProtect, generate_csrf
 import cv2
 import numpy as np
 from datetime import datetime
@@ -21,16 +20,14 @@ if not UPLOAD_SECRET:
     raise RuntimeError("UPLOAD_SECRET not set")
 
 MAX_UPLOAD_MB = 2
-UPLOAD_INTERVAL = 0.5   # 2 FPS
+UPLOAD_INTERVAL = 0.5
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
-CONFIDENCE_THRESHOLD = 0.45  # Stricter for better accuracy
+CONFIDENCE_THRESHOLD = 0.45
 
 # ================= WEB LOGIN CONFIG =================
 WEB_USERNAME = os.environ.get("WEB_USERNAME", "admin")
-WEB_PASSWORD = os.environ.get("WEB_PASSWORD")
-if not WEB_PASSWORD:
-    raise RuntimeError("WEB_PASSWORD must be set! Don't use default password.")
+WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "admin123")
 
 # ================= APP =================
 app = Flask(__name__)
@@ -39,14 +36,12 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production",
-    WTF_CSRF_TIME_LIMIT=None
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production"
 )
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-csrf = CSRFProtect(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 os.makedirs("known_faces", exist_ok=True)
@@ -91,12 +86,10 @@ def preprocess_image(image):
     try:
         height, width = image.shape[:2]
         
-        # Resize if too large
         if width > 800:
             scale = 800 / width
             image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
         
-        # Enhance contrast using CLAHE
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -175,18 +168,15 @@ def secure():
     if request.method == "OPTIONS":
         return "", 200
     
-    # ESP32 upload endpoint - check API key
     if request.path == "/upload":
         esp32_key = request.headers.get("X-ESP32-KEY", "").strip()
         if not secrets.compare_digest(esp32_key, UPLOAD_SECRET.strip()):
             return jsonify({"error": "Unauthorized"}), 401
         return
     
-    # Public endpoints
     if request.path in ["/login", "/logout"] or request.path.startswith("/static"):
         return
     
-    # Protected endpoints - require web auth
     if not session.get("web_auth"):
         return redirect("/login")
 
@@ -196,12 +186,12 @@ def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    if os.environ.get("FLASK_ENV") == "production":
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
 # ================= ROUTES =================
 @app.route("/login", methods=["GET", "POST"])
-@csrf.exempt
 def login():
     if request.method == "POST":
         username = request.form.get("username", "")
@@ -210,7 +200,6 @@ def login():
         if (secrets.compare_digest(username, WEB_USERNAME) and 
             secrets.compare_digest(password, WEB_PASSWORD)):
             session.clear()
-            session.regenerate = True  # Prevent session fixation
             session["web_auth"] = True
             return redirect("/")
         
@@ -225,41 +214,28 @@ def logout():
 
 @app.route("/")
 def index():
-    return render_template("index.html", csrf_token=generate_csrf())
-
-@app.route("/csrf-token")
-def get_csrf_token():
-    """Provide CSRF token for AJAX requests"""
-    return jsonify({"csrf_token": generate_csrf()})
+    return render_template("index.html")
 
 @app.route("/upload", methods=["POST"])
-@csrf.exempt  # ESP32 uses API key, not CSRF
 def upload():
-    # Auth already checked in middleware
     ip = request.remote_addr
     
     if not rate_limit(ip):
         return jsonify({"error": "Too many requests"}), 429
     
     try:
-        # Get image data
         data = request.files["file"].read() if "file" in request.files else request.data
         
         if len(data) == 0:
             return jsonify({"error": "No image data"}), 400
         
-        # Decode image
         image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
         if image is None:
             return jsonify({"error": "Invalid image"}), 400
         
-        # Preprocess for better recognition
         image = preprocess_image(image)
-        
-        # Recognize faces
         locs, names, confidences = recognize_faces(image)
         
-        # Draw boxes and labels
         for (t, r, b, l), name, conf in zip(locs, names, confidences):
             color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
             cv2.rectangle(image, (l, t), (r, b), color, 2)
@@ -268,11 +244,9 @@ def upload():
             cv2.putText(image, label, (l, t - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
         
-        # Encode result
         _, buf = cv2.imencode(".jpg", image)
         img_b64 = base64.b64encode(buf).decode()
         
-        # Create detection record
         detection = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "faces": len(locs),
@@ -281,11 +255,9 @@ def upload():
             "image": f"data:image/jpeg;base64,{img_b64}"
         }
         
-        # Store in history
         detection_history.insert(0, detection)
         detection_history[:] = detection_history[:MAX_HISTORY]
         
-        # Broadcast to web clients
         socketio.emit("new_detection", detection)
         
         return jsonify({"success": True})
@@ -304,19 +276,16 @@ def add_face():
         name = data.get("name", "").strip()
         image_data = data.get("image", "")
         
-        # Validate name
         if not name or len(name) > 50:
             return jsonify({"error": "Invalid name"}), 400
         
         if not re.match(r'^[a-zA-Z0-9\s_-]+$', name):
             return jsonify({"error": "Name contains invalid characters"}), 400
         
-        # Check known faces limit
         with face_lock:
             if len(known_face_encodings) >= MAX_KNOWN_FACES:
                 return jsonify({"error": f"Maximum {MAX_KNOWN_FACES} faces reached"}), 400
         
-        # Decode image
         if "," in image_data:
             image_data = image_data.split(",")[-1]
         
@@ -328,7 +297,6 @@ def add_face():
         if image is None:
             return jsonify({"error": "Invalid image"}), 400
         
-        # Verify face exists
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         encodings = face_recognition.face_encodings(rgb)
         
@@ -338,15 +306,11 @@ def add_face():
         if len(encodings) > 1:
             return jsonify({"error": "Multiple faces detected. Please upload image with single face"}), 400
         
-        # Save image
         filename = f"{name}_{uuid.uuid4().hex[:8]}.jpg"
         filepath = os.path.join("known_faces", filename)
         cv2.imwrite(filepath, image)
         
-        # Reload faces
         load_known_faces()
-        
-        # Broadcast update
         socketio.emit("faces_updated", get_known_faces())
         
         return jsonify({"success": True})
@@ -361,14 +325,10 @@ def remove_face(filename):
         return jsonify({"error": "Unauthorized"}), 401
     
     try:
-        # Validate filename
         if not validate_filename(filename):
             return jsonify({"error": "Invalid filename"}), 400
         
-        # Remove file
         path = os.path.join("known_faces", filename)
-        
-        # Ensure path is within known_faces directory (prevent path traversal)
         real_path = os.path.realpath(path)
         real_dir = os.path.realpath("known_faces")
         
@@ -378,10 +338,7 @@ def remove_face(filename):
         if os.path.exists(path):
             os.remove(path)
         
-        # Reload faces
         load_known_faces()
-        
-        # Broadcast update
         socketio.emit("faces_updated", get_known_faces())
         
         return jsonify({"success": True})
@@ -451,14 +408,11 @@ def socket_connect(auth):
 
 # ================= START =================
 if __name__ == "__main__":
-    # Start cleanup thread
     cleanup_thread = Thread(target=cleanup_old_rate_limits, daemon=True)
     cleanup_thread.start()
     
-    # Load known faces
     load_known_faces()
     
-    # Run server
     socketio.run(
         app,
         host="0.0.0.0",
