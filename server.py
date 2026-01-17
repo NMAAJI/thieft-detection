@@ -16,8 +16,7 @@ if not UPLOAD_SECRET:
     raise RuntimeError("UPLOAD_SECRET not set in environment")
 
 MAX_UPLOAD_MB = 2
-UPLOAD_INTERVAL = 3.0
-RECOG_INTERVAL = 2.0
+UPLOAD_INTERVAL = 0.5
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
 
@@ -74,7 +73,6 @@ known_face_names = []
 detection_history = []
 
 LAST_UPLOAD = {}
-LAST_RECOG = 0
 
 # ================= HELPERS =================
 
@@ -128,11 +126,11 @@ def recognize_faces(image):
 
     names = []
     for enc in encs:
-        matches = face_recognition.compare_faces(known_face_encodings, enc, 0.5)
+        distances = face_recognition.face_distance(known_face_encodings, enc)
+        best_idx = np.argmin(distances)
         name = "Unknown"
-        if True in matches:
-            idx = np.argmin(face_recognition.face_distance(known_face_encodings, enc))
-            name = known_face_names[idx]
+        if distances[best_idx] < 0.45:
+            name = known_face_names[best_idx]
         names.append(name)
 
     return locs, names
@@ -211,12 +209,8 @@ def upload():
 
     image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    global LAST_RECOG
-    now = time()
-
-    if now - LAST_RECOG > RECOG_INTERVAL and known_face_encodings:
+    if known_face_encodings:
         locs, names = recognize_faces(image)
-        LAST_RECOG = now
     else:
         locs, names = [], []
 
