@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify, render_template, session
+from flask import Flask, request, jsonify, render_template, session, redirect
 from flask_socketio import SocketIO
 from flask_cors import CORS
 from flask_session import Session
+from secrets import compare_digest
 import cv2
 import numpy as np
 from datetime import datetime
@@ -10,6 +11,7 @@ import os
 import face_recognition
 from time import time
 import uuid
+import re
 
 # ================= ENV CONFIG =================
 UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET")  # SET IN RAILWAY
@@ -20,6 +22,12 @@ MAX_UPLOAD_MB = 2
 UPLOAD_INTERVAL = 0.5
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
+
+# ================= LOGIN CONFIG =================
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_PASSWORD not set")
 # ==============================================
 
 app = Flask(__name__)
@@ -35,6 +43,16 @@ app.config.update(
 Session(app)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+
+# ================= SECURITY HEADERS =================
+@app.after_request
+def add_security_headers(resp):
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Permissions-Policy"] = "camera=(), microphone=()"
+    return resp
+# ===================================================
 
 CORS(app, resources={
     r"/upload": {
@@ -100,6 +118,10 @@ def rate_limit(ip):
     for k in list(LAST_UPLOAD.keys()):
         if now - LAST_UPLOAD[k] > 10:
             del LAST_UPLOAD[k]
+    
+    # Prevent memory creep
+    if len(LAST_UPLOAD) > 1000:
+        LAST_UPLOAD.clear()
 
     if now - LAST_UPLOAD.get(ip, 0) < UPLOAD_INTERVAL:
         return False
@@ -138,23 +160,49 @@ def recognize_faces(image):
 # ================= MIDDLEWARE =================
 
 @app.before_request
-def secure_web_access():
-    # ESP32 uses header auth (only for /upload)
-    if request.headers.get("X-ESP32-KEY") and request.path == "/upload":
+def protect_routes():
+    # ESP32 upload allowed via header auth
+    if request.path == "/upload":
         return
 
-    # Allow static & homepage
-    if request.path in ["/", "/socket.io/"] or request.path.startswith("/static"):
-        session["web_auth"] = True
+    # Allow login page and logout
+    if request.path in ["/login", "/logout"]:
         return
 
-    # Protect API routes
-    protected = ["/add_face", "/remove_face", "/known_faces", "/history", "/stats"]
-    if any(request.path.startswith(p) for p in protected):
-        if not session.get("web_auth"):
-            return jsonify({"error": "Unauthorized"}), 401
+    # Allow static files
+    if request.path.startswith("/static"):
+        return
+
+    # Protect everything else - require login
+    if not session.get("web_auth"):
+        return redirect("/login")
 
 # ================= ROUTES =================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+
+        if (
+            compare_digest(username, ADMIN_USERNAME) and
+            compare_digest(password, ADMIN_PASSWORD)
+        ):
+            session.clear()
+            session["web_auth"] = True
+            return redirect("/")
+
+        return render_template("login.html", error="Invalid credentials")
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
 
 @app.route("/")
 def index():
@@ -262,6 +310,10 @@ def add_face():
 def remove_face(filename):
     if not api_authorized(request):
         return jsonify({"error": "Unauthorized"}), 401
+
+    # Prevent path traversal attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+\.jpg$', filename):
+        return jsonify({"error": "Invalid filename"}), 400
 
     path = os.path.join("known_faces", filename)
     if not os.path.exists(path):
