@@ -119,7 +119,7 @@ def load_known_faces():
             enc = face_recognition.face_encodings(img)
             if enc:
                 known_face_encodings.append(enc[0])
-                known_face_names.append(os.path.splitext(f)[0])
+                known_face_names.append(os.path.splitext(f)[0].split("_")[0])
 
 def recognize_faces(image):
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -217,13 +217,22 @@ def upload():
     image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
     global LAST_RECOG
-    now = time()
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    locs = face_recognition.face_locations(rgb, model="hog")
 
-    if known_face_encodings and (now - LAST_RECOG) >= RECOG_INTERVAL:
-        locs, names = recognize_faces(image)
-        LAST_RECOG = now
+    names = []
+    if known_face_encodings and (time() - LAST_RECOG) >= RECOG_INTERVAL:
+        encs = face_recognition.face_encodings(rgb, locs)
+        for enc in encs:
+            distances = face_recognition.face_distance(known_face_encodings, enc)
+            best_idx = np.argmin(distances)
+            name = "Unknown"
+            if distances[best_idx] < 0.5:
+                name = known_face_names[best_idx]
+            names.append(name)
+        LAST_RECOG = time()
     else:
-        locs, names = [], []
+        names = ["Unknown"] * len(locs)
 
     for (t, r, b, l), n in zip(locs, names):
         color = (0,255,0) if n != "Unknown" else (0,0,255)
