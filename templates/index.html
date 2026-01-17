@@ -3,19 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' wss: https:; img-src 'self' data:; media-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline';">
     <title>Face Recognition Dashboard</title>
+    <script src="/config.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
-    <script>
-        const SERVER_URL = window.location.hostname === 'localhost'
-            ? 'http://localhost:5000'
-            : window.location.origin;
-
-        // ✅ SECURE: Session-based authentication
-        // Browser is authenticated via HTTP-only session cookies
-        // API key is never exposed to JavaScript
-    </script>
     <style>
         * {
             margin: 0;
@@ -51,6 +41,31 @@
         .header p {
             opacity: 0.9;
             font-size: 1.1em;
+        }
+
+        .header-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .logout-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.8);
         }
 
         .tabs {
@@ -158,7 +173,7 @@
             align-items: center;
             gap: 12px;
             padding: 15px;
-            background: linear-gradient(135deg, #f6f8fb, #e9ecef);
+            background: linear-gradient(135deg, #fbf6f6, #e9ecef);
             border-radius: 12px;
             margin-bottom: 20px;
         }
@@ -424,340 +439,26 @@
                 padding: 0 10px;
             }
 
-            .header {
-                padding: 15px 0;
-            }
-
-            .header h1 {
-                font-size: clamp(1.4em, 4vw, 2em);
-            }
-
-            .header p {
-                font-size: 0.95em;
-            }
-
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-                margin-bottom: 15px;
             }
 
-            .stat-card {
-                padding: 15px;
-            }
-
-            .stat-icon {
-                font-size: 1.5em;
-                margin-bottom: 5px;
-            }
-
-            .stat-value {
-                font-size: 1.5em;
-            }
-
-            .stat-label {
-                font-size: 0.75em;
-            }
-
-            .tabs {
-                gap: 8px;
-                margin: 15px 0;
-            }
-
-            .tab {
-                min-width: 100px;
-                padding: 10px;
-                font-size: 0.85em;
+            .faces-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             }
 
             .card {
                 padding: 15px;
-                margin-bottom: 15px;
-                border-radius: 15px;
-            }
-
-            .card-title {
-                font-size: 1.2em;
-                gap: 8px;
-            }
-
-            .faces-grid {
-                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-                gap: 12px;
-            }
-
-            .face-card {
-                padding: 10px;
-            }
-
-            .face-card img {
-                height: 150px;
-                margin-bottom: 8px;
-            }
-
-            .face-name {
-                font-size: 0.95em;
-                margin-bottom: 8px;
-            }
-
-            .btn {
-                padding: 12px 20px;
-                font-size: 0.9em;
-                gap: 8px;
-                width: 100%;
-                justify-content: center;
             }
 
             .upload-area {
-                padding: 25px 15px;
-                border-radius: 12px;
-            }
-
-            .upload-icon {
-                font-size: 3em;
-                margin-bottom: 10px;
-            }
-
-            .upload-area h3 {
-                font-size: 1.1em;
-                margin-bottom: 5px;
-            }
-
-            .upload-area p {
-                font-size: 0.9em;
-            }
-
-            .upload-section {
-                padding: 15px;
-                margin-bottom: 15px;
-            }
-
-            input[type="text"] {
-                padding: 12px;
-                font-size: 1em;
-                margin-bottom: 12px;
-            }
-
-            .preview-container {
-                margin: 15px 0;
-            }
-
-            .preview-image {
-                max-height: 250px;
-                border-radius: 12px;
-            }
-
-            #liveImage {
-                min-height: 200px;
-                max-height: 400px;
-            }
-
-            .status-bar {
-                padding: 12px;
-                margin-bottom: 15px;
-                gap: 10px;
-            }
-
-            .history-item {
-                padding: 12px;
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-
-            .face-badge {
-                padding: 5px 10px;
-                font-size: 0.8em;
-                margin: 2px 2px 2px 0;
-            }
-
-            .alert {
-                padding: 15px;
-                gap: 12px;
-                margin: 10px 0;
-            }
-
-            .alert-icon {
-                font-size: 1.8em;
-                flex-shrink: 0;
-            }
-
-            .empty-state {
-                padding: 40px 20px;
-            }
-
-            .empty-icon {
-                font-size: 4em;
-            }
-
-            .loader {
-                width: 35px;
-                height: 35px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 5px;
-            }
-
-            .container {
-                padding: 0 5px;
-            }
-
-            .header h1 {
-                font-size: 1.3em;
-                margin-bottom: 5px;
-            }
-
-            .header p {
-                font-size: 0.85em;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 8px;
-            }
-
-            .stat-card {
-                padding: 12px;
-            }
-
-            .stat-icon {
-                font-size: 1.3em;
-            }
-
-            .stat-value {
-                font-size: 1.3em;
-                margin: 5px 0;
-            }
-
-            .stat-label {
-                font-size: 0.7em;
-            }
-
-            .tabs {
-                gap: 5px;
-                margin: 10px 0;
-            }
-
-            .tab {
-                min-width: 80px;
-                padding: 8px 10px;
-                font-size: 0.75em;
-            }
-
-            .tab:hover {
-                transform: none;
-            }
-
-            .card {
-                padding: 12px;
-                margin-bottom: 12px;
-                border-radius: 12px;
-            }
-
-            .card-title {
-                font-size: 1.1em;
-                margin-bottom: 15px;
-            }
-
-            .faces-grid {
-                grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-                gap: 10px;
-            }
-
-            .face-card {
-                padding: 8px;
-            }
-
-            .face-card img {
-                height: 120px;
-                margin-bottom: 8px;
-            }
-
-            .face-name {
-                font-size: 0.85em;
-                word-break: break-word;
-            }
-
-            .btn {
-                padding: 10px 15px;
-                font-size: 0.85em;
-                gap: 5px;
-            }
-
-            .upload-area {
-                padding: 20px 10px;
-                border-width: 2px;
-            }
-
-            .upload-icon {
-                font-size: 2.5em;
-                margin-bottom: 8px;
-            }
-
-            .upload-area h3 {
-                font-size: 1em;
-                margin-bottom: 3px;
-            }
-
-            .upload-area p {
-                font-size: 0.8em;
-                display: none;
-            }
-
-            .upload-section {
-                padding: 12px;
-            }
-
-            input[type="text"] {
-                padding: 10px;
-                font-size: 16px;
-                margin-bottom: 10px;
-            }
-
-            #liveImage {
-                min-height: 180px;
-                max-height: 350px;
-            }
-
-            .status-bar {
-                padding: 10px;
-                font-size: 0.9em;
-            }
-
-            .history-item {
-                padding: 10px;
-            }
-
-            .timestamp {
-                font-size: 0.8em;
-                margin-top: 5px;
-            }
-
-            .empty-state {
                 padding: 30px 15px;
             }
 
-            .empty-icon {
-                font-size: 3em;
-                margin-bottom: 10px;
-            }
-
-            .alert {
+            .tab {
+                min-width: 120px;
                 padding: 12px;
-                gap: 10px;
-            }
-
-            .alert-icon {
-                font-size: 1.5em;
-            }
-
-            .face-badge {
-                padding: 4px 8px;
-                font-size: 0.75em;
-                margin: 2px 2px 2px 0;
+                font-size: 0.9em;
             }
         }
 
@@ -778,7 +479,15 @@
     </style>
 </head>
 <body>
+    <!-- Audio alert for known person detection -->
+    <audio id="alarmSound" preload="auto">
+        <source src="/static/alert.mp3" type="audio/mpeg">
+    </audio>
+    
     <div class="container">
+        <div class="header-controls">
+            <a href="/logout" class="logout-btn">🔓 Logout</a>
+        </div>
         <div class="header">
             <h1>🎭 Face Recognition System</h1>
             <p>AI-Powered Smart Security</p>
@@ -833,7 +542,7 @@
                         <div class="upload-icon">📸</div>
                         <h3>Click or Drag to Upload</h3>
                         <p>Upload a clear photo of the person's face</p>
-                        <input type="file" id="fileInput" accept="image/*">
+                        <input type="file" id="fileInput" accept="image/*" capture="environment">
                     </div>
                     
                     <div id="previewContainer" class="preview-container" style="display:none;">
@@ -869,30 +578,10 @@
     </div>
 
     <script>
-        const socket = io(SERVER_URL, {
-            transports: ['websocket'],
-            upgrade: false
-        });
+        const SERVER_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_URL) || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+        const socket = io(SERVER_URL);
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
-        
-        // Audio unlock (MUST BE FIRST)
-        let audioUnlocked = false;
-        const alertSound = document.getElementById('alertSound');
-        
-        // Sound cooldown (prevent spam)
-        let lastSoundTime = 0;
-        const SOUND_COOLDOWN = 5000; // 5 seconds
-        
-        document.body.addEventListener('click', () => {
-            if (!audioUnlocked) {
-                alertSound.play().then(() => {
-                    alertSound.pause();
-                    alertSound.currentTime = 0;
-                    audioUnlocked = true;
-                }).catch(() => {});
-            }
-        }, { once: true });
 
         // Tab switching
         function switchTab(tab) {
@@ -927,6 +616,11 @@
             stats.recognized += data.recognized.length;
             stats.unknown += data.unknown;
             updateStats();
+            
+            // Play alarm if known person detected
+            if (data.recognized.length > 0) {
+                playAlarm();
+            }
             
             showAlert(data);
         });
@@ -972,14 +666,19 @@
         }
 
         function playSound() {
-            if (!audioUnlocked) return;
-
-            const now = Date.now();
-            if (now - lastSoundTime < SOUND_COOLDOWN) return;
-
-            lastSoundTime = now;
-            alertSound.currentTime = 0;
-            alertSound.play().catch(() => {});
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.frequency.value = 800;
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.5);
         }
 
         function updateStats() {
@@ -988,10 +687,16 @@
             document.getElementById('unknownCount').textContent = stats.unknown;
         }
 
+        function playAlarm() {
+            const alarmAudio = document.getElementById('alarmSound');
+            alarmAudio.currentTime = 0; // Reset to start
+            alarmAudio.play().catch(err => {
+                console.log('Audio playback failed:', err);
+            });
+        }
+
         function loadStats() {
-            fetch(`${SERVER_URL}/stats`, {
-                credentials: "include"
-            })
+            fetch(`${SERVER_URL}/stats`)
                 .then(r => r.json())
                 .then(data => {
                     stats.total = data.total_detections;
@@ -1032,80 +737,17 @@
         });
 
         function handleFile(file) {
-            if (!file) return;
-
-            // File size validation (max 10MB)
-            const maxFileSize = 10 * 1024 * 1024;
-            if (file.size > maxFileSize) {
-                alert('❌ File too large (max 10MB). Will compress...');
-            }
-
-            // Show processing feedback
-            uploadBtn.innerHTML = '<span>⏳</span> Processing image...';
-            uploadBtn.disabled = true;
-
-            const img = new Image();
+            if (!file || !file.type.startsWith('image/')) return;
+            
+            selectedFile = file;
             const reader = new FileReader();
-
-            reader.onerror = () => {
-                alert('❌ Failed to read file');
+            
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
                 uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<span>💾</span> Add to Database';
             };
-
-            reader.onload = e => {
-                img.onerror = () => {
-                    alert('❌ Invalid image file');
-                    uploadBtn.disabled = false;
-                    uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-                };
-
-                img.onload = () => {
-                    try {
-                        const canvas = document.createElement("canvas");
-                        const ctx = canvas.getContext("2d");
-
-                        // Adaptive sizing based on file size
-                        let maxSize = 640;
-                        if (file.size > 5 * 1024 * 1024) maxSize = 480; // Compress more if large
-                        
-                        let { width, height } = img;
-
-                        if (width > maxSize || height > maxSize) {
-                            const scale = Math.min(maxSize / width, maxSize / height);
-                            width *= scale;
-                            height *= scale;
-                        }
-
-                        canvas.width = width;
-                        canvas.height = height;
-                        ctx.drawImage(img, 0, 0, width, height);
-
-                        // Adaptive quality based on size
-                        const quality = file.size > 5 * 1024 * 1024 ? 0.75 : 0.9;
-                        const base64 = canvas.toDataURL("image/jpeg", quality);
-
-                        // Check compressed size
-                        const compressedSize = base64.length / 4 / 1024;
-                        console.log(`Compressed image: ${compressedSize.toFixed(1)}KB`);
-
-                        // preview
-                        previewImage.src = base64;
-                        previewContainer.style.display = "block";
-
-                        selectedFile = base64;
-                        uploadBtn.disabled = false;
-                        uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-                    } catch (err) {
-                        alert('❌ Error processing image: ' + err.message);
-                        uploadBtn.disabled = false;
-                        uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-                    }
-                };
-
-                img.src = e.target.result;
-            };
-
+            
             reader.readAsDataURL(file);
         }
 
@@ -1122,40 +764,40 @@
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<span>⏳</span> Processing...';
             
-            fetch(`${SERVER_URL}/add_face`, {
-                method: 'POST',
-                credentials: "include",
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: name,
-                    image: selectedFile
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                fetch(`${SERVER_URL}/add_face`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        image: e.target.result
+                    })
                 })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert('✅ Face added successfully!');
-                    personName.value = '';
-                    previewContainer.style.display = 'none';
-                    selectedFile = null;
-                    loadKnownFaces();
-                } else {
-                    alert('❌ Error: ' + data.error);
-                }
-            })
-            .catch(err => alert('Error: ' + err))
-            .finally(() => {
-                uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-            });
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Face added successfully!');
+                        personName.value = '';
+                        previewContainer.style.display = 'none';
+                        selectedFile = null;
+                        loadKnownFaces();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(err => alert('Error: ' + err))
+                .finally(() => {
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = '<span>💾</span> Add to Database';
+                });
+            };
+            
+            reader.readAsDataURL(selectedFile);
         }
 
         function loadKnownFaces() {
-            fetch(`${SERVER_URL}/known_faces`, {
-                credentials: "include"
-            })
+            fetch(`${SERVER_URL}/known_faces`)
                 .then(r => r.json())
                 .then(displayKnownFaces);
         }
@@ -1187,10 +829,7 @@
         function removeFace(filename) {
             if (!confirm('Remove this face from database?')) return;
             
-            fetch(`${SERVER_URL}/remove_face/${filename}`, {
-                method: 'DELETE',
-                credentials: "include"
-            })
+            fetch(`${SERVER_URL}/remove_face/${filename}`, { method: 'DELETE' })
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
@@ -1200,9 +839,7 @@
         }
 
         function loadHistory() {
-            fetch(`${SERVER_URL}/history`, {
-                credentials: "include"
-            })
+            fetch(`${SERVER_URL}/history`)
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('historyContainer');
@@ -1235,6 +872,5 @@
                 });
         }
     </script>
-
 </body>
 </html>
