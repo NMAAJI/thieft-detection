@@ -18,7 +18,6 @@ if not UPLOAD_SECRET:
 
 MAX_UPLOAD_MB = 2
 UPLOAD_INTERVAL = 0.5
-RECOG_INTERVAL = 1.0
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
 # ==============================================
@@ -74,8 +73,6 @@ known_face_names = []
 detection_history = []
 
 LAST_UPLOAD = {}
-LAST_RECOG = 0
-LAST_RECOG = 0
 
 # ================= HELPERS =================
 
@@ -185,23 +182,25 @@ def upload():
 
     image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    global LAST_RECOG
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Detect faces
     locs = face_recognition.face_locations(rgb, model="hog")
+    encs = face_recognition.face_encodings(rgb, locs)
 
     names = []
-    if known_face_encodings and (time() - LAST_RECOG) >= RECOG_INTERVAL:
-        encs = face_recognition.face_encodings(rgb, locs)
-        for enc in encs:
+
+    for enc in encs:
+        if known_face_encodings:
             distances = face_recognition.face_distance(known_face_encodings, enc)
             best_idx = np.argmin(distances)
-            name = "Unknown"
-            if distances[best_idx] < 0.5:
-                name = known_face_names[best_idx]
-            names.append(name)
-        LAST_RECOG = time()
-    else:
-        names = ["Unknown"] * len(locs)
+
+            if distances[best_idx] < 0.48:
+                names.append(known_face_names[best_idx])
+            else:
+                names.append("Unknown")
+        else:
+            names.append("Unknown")
 
     for (t, r, b, l), n in zip(locs, names):
         color = (0,255,0) if n != "Unknown" else (0,0,255)
