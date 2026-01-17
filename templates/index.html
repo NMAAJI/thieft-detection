@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' wss: https:; img-src 'self' data:; media-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' wss: https:; img-src 'self' data:; media-src 'self'; script-src 'self' https://cdn.socket.io; style-src 'self' 'unsafe-inline';">
     <title>Face Recognition Dashboard</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
@@ -12,9 +12,21 @@
             ? 'http://localhost:5000'
             : window.location.origin;
 
-        // ✅ SECURE: Session-based authentication
-        // Browser is authenticated via HTTP-only session cookies
-        // API key is never exposed to JavaScript
+        // CSRF Token Management
+        let csrfToken = '{{ csrf_token }}';
+        
+        // Fetch new CSRF token if needed
+        async function refreshCsrfToken() {
+            try {
+                const response = await fetch(`${SERVER_URL}/csrf-token`, {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                csrfToken = data.csrf_token;
+            } catch (e) {
+                console.error('Failed to refresh CSRF token:', e);
+            }
+        }
     </script>
     <style>
         * {
@@ -51,6 +63,15 @@
         .header p {
             opacity: 0.9;
             font-size: 1.1em;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
         .tabs {
@@ -307,7 +328,7 @@
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
         }
@@ -317,9 +338,18 @@
             color: white;
         }
 
-        .btn-danger:hover {
+        .btn-danger:hover:not(:disabled) {
             transform: scale(1.05);
             box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn-logout {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9em;
         }
 
         .btn:disabled {
@@ -419,348 +449,6 @@
             opacity: 0.3;
         }
 
-        @media (max-width: 768px) {
-            .container {
-                padding: 0 10px;
-            }
-
-            .header {
-                padding: 15px 0;
-            }
-
-            .header h1 {
-                font-size: clamp(1.4em, 4vw, 2em);
-            }
-
-            .header p {
-                font-size: 0.95em;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-                margin-bottom: 15px;
-            }
-
-            .stat-card {
-                padding: 15px;
-            }
-
-            .stat-icon {
-                font-size: 1.5em;
-                margin-bottom: 5px;
-            }
-
-            .stat-value {
-                font-size: 1.5em;
-            }
-
-            .stat-label {
-                font-size: 0.75em;
-            }
-
-            .tabs {
-                gap: 8px;
-                margin: 15px 0;
-            }
-
-            .tab {
-                min-width: 100px;
-                padding: 10px;
-                font-size: 0.85em;
-            }
-
-            .card {
-                padding: 15px;
-                margin-bottom: 15px;
-                border-radius: 15px;
-            }
-
-            .card-title {
-                font-size: 1.2em;
-                gap: 8px;
-            }
-
-            .faces-grid {
-                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-                gap: 12px;
-            }
-
-            .face-card {
-                padding: 10px;
-            }
-
-            .face-card img {
-                height: 150px;
-                margin-bottom: 8px;
-            }
-
-            .face-name {
-                font-size: 0.95em;
-                margin-bottom: 8px;
-            }
-
-            .btn {
-                padding: 12px 20px;
-                font-size: 0.9em;
-                gap: 8px;
-                width: 100%;
-                justify-content: center;
-            }
-
-            .upload-area {
-                padding: 25px 15px;
-                border-radius: 12px;
-            }
-
-            .upload-icon {
-                font-size: 3em;
-                margin-bottom: 10px;
-            }
-
-            .upload-area h3 {
-                font-size: 1.1em;
-                margin-bottom: 5px;
-            }
-
-            .upload-area p {
-                font-size: 0.9em;
-            }
-
-            .upload-section {
-                padding: 15px;
-                margin-bottom: 15px;
-            }
-
-            input[type="text"] {
-                padding: 12px;
-                font-size: 1em;
-                margin-bottom: 12px;
-            }
-
-            .preview-container {
-                margin: 15px 0;
-            }
-
-            .preview-image {
-                max-height: 250px;
-                border-radius: 12px;
-            }
-
-            #liveImage {
-                min-height: 200px;
-                max-height: 400px;
-            }
-
-            .status-bar {
-                padding: 12px;
-                margin-bottom: 15px;
-                gap: 10px;
-            }
-
-            .history-item {
-                padding: 12px;
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-
-            .face-badge {
-                padding: 5px 10px;
-                font-size: 0.8em;
-                margin: 2px 2px 2px 0;
-            }
-
-            .alert {
-                padding: 15px;
-                gap: 12px;
-                margin: 10px 0;
-            }
-
-            .alert-icon {
-                font-size: 1.8em;
-                flex-shrink: 0;
-            }
-
-            .empty-state {
-                padding: 40px 20px;
-            }
-
-            .empty-icon {
-                font-size: 4em;
-            }
-
-            .loader {
-                width: 35px;
-                height: 35px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 5px;
-            }
-
-            .container {
-                padding: 0 5px;
-            }
-
-            .header h1 {
-                font-size: 1.3em;
-                margin-bottom: 5px;
-            }
-
-            .header p {
-                font-size: 0.85em;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 8px;
-            }
-
-            .stat-card {
-                padding: 12px;
-            }
-
-            .stat-icon {
-                font-size: 1.3em;
-            }
-
-            .stat-value {
-                font-size: 1.3em;
-                margin: 5px 0;
-            }
-
-            .stat-label {
-                font-size: 0.7em;
-            }
-
-            .tabs {
-                gap: 5px;
-                margin: 10px 0;
-            }
-
-            .tab {
-                min-width: 80px;
-                padding: 8px 10px;
-                font-size: 0.75em;
-            }
-
-            .tab:hover {
-                transform: none;
-            }
-
-            .card {
-                padding: 12px;
-                margin-bottom: 12px;
-                border-radius: 12px;
-            }
-
-            .card-title {
-                font-size: 1.1em;
-                margin-bottom: 15px;
-            }
-
-            .faces-grid {
-                grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-                gap: 10px;
-            }
-
-            .face-card {
-                padding: 8px;
-            }
-
-            .face-card img {
-                height: 120px;
-                margin-bottom: 8px;
-            }
-
-            .face-name {
-                font-size: 0.85em;
-                word-break: break-word;
-            }
-
-            .btn {
-                padding: 10px 15px;
-                font-size: 0.85em;
-                gap: 5px;
-            }
-
-            .upload-area {
-                padding: 20px 10px;
-                border-width: 2px;
-            }
-
-            .upload-icon {
-                font-size: 2.5em;
-                margin-bottom: 8px;
-            }
-
-            .upload-area h3 {
-                font-size: 1em;
-                margin-bottom: 3px;
-            }
-
-            .upload-area p {
-                font-size: 0.8em;
-                display: none;
-            }
-
-            .upload-section {
-                padding: 12px;
-            }
-
-            input[type="text"] {
-                padding: 10px;
-                font-size: 16px;
-                margin-bottom: 10px;
-            }
-
-            #liveImage {
-                min-height: 180px;
-                max-height: 350px;
-            }
-
-            .status-bar {
-                padding: 10px;
-                font-size: 0.9em;
-            }
-
-            .history-item {
-                padding: 10px;
-            }
-
-            .timestamp {
-                font-size: 0.8em;
-                margin-top: 5px;
-            }
-
-            .empty-state {
-                padding: 30px 15px;
-            }
-
-            .empty-icon {
-                font-size: 3em;
-                margin-bottom: 10px;
-            }
-
-            .alert {
-                padding: 12px;
-                gap: 10px;
-            }
-
-            .alert-icon {
-                font-size: 1.5em;
-            }
-
-            .face-badge {
-                padding: 4px 8px;
-                font-size: 0.75em;
-                margin: 2px 2px 2px 0;
-            }
-        }
-
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #667eea;
@@ -775,24 +463,49 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .faces-grid {
+                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="header-content">
                 <div>
                     <h1>🎭 Face Recognition System</h1>
                     <p>AI-Powered Smart Security</p>
                 </div>
-                <a href="/logout" class="btn btn-logout" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 0.9em;">🚪 Logout</a>
+                <a href="/logout" class="btn btn-logout">🚪 Logout</a>
             </div>
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('live')">📹 Live Feed</button>
-            <button class="tab" onclick="switchTab('faces')">👤 Known Faces</button>
-            <button class="tab" onclick="switchTab('history')">📊 History</button>
+            <button class="tab active" onclick="switchTab('live', event)">📹 Live Feed</button>
+            <button class="tab" onclick="switchTab('faces', event)">👤 Known Faces</button>
+            <button class="tab" onclick="switchTab('history', event)">📊 History</button>
         </div>
 
         <div id="liveTab" class="tab-content active">
@@ -837,7 +550,7 @@
                     <div class="upload-area" id="uploadArea">
                         <div class="upload-icon">📸</div>
                         <h3>Click or Drag to Upload</h3>
-                        <p>Upload a clear photo of the person's face</p>
+                        <p>Upload a clear photo with single face</p>
                         <input type="file" id="fileInput" accept="image/*">
                     </div>
                     
@@ -845,7 +558,9 @@
                         <img id="previewImage" class="preview-image" src="">
                     </div>
                     
-                    <input type="text" id="personName" placeholder="Enter person's name">
+                    <div id="uploadError" class="error-message"></div>
+                    
+                    <input type="text" id="personName" placeholder="Enter person's name" maxlength="50">
                     <button class="btn btn-primary" id="uploadBtn" disabled>
                         <span>💾</span> Add to Database
                     </button>
@@ -878,16 +593,17 @@
             transports: ['websocket'],
             upgrade: false
         });
+        
         let selectedFile = null;
         let stats = { total: 0, recognized: 0, unknown: 0 };
         
-        // Audio unlock (MUST BE FIRST)
+        // Audio unlock
         let audioUnlocked = false;
         const alertSound = document.getElementById('alertSound');
         
         // Sound cooldown (prevent spam)
         let lastSoundTime = 0;
-        const SOUND_COOLDOWN = 5000; // 5 seconds
+        const SOUND_COOLDOWN = 5000;
         
         document.body.addEventListener('click', () => {
             if (!audioUnlocked) {
@@ -899,8 +615,46 @@
             }
         }, { once: true });
 
+        // Helper: Show error message
+        function showError(elementId, message) {
+            const errorEl = document.getElementById(elementId);
+            if (errorEl) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+                setTimeout(() => {
+                    errorEl.style.display = 'none';
+                }, 5000);
+            } else {
+                alert(message);
+            }
+        }
+
+        // Helper: Make authenticated fetch with CSRF token
+        async function authenticatedFetch(url, options = {}) {
+            const defaultOptions = {
+                credentials: 'include',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    ...options.headers
+                },
+                ...options
+            };
+            
+            const response = await fetch(url, defaultOptions);
+            
+            // Refresh CSRF token if needed
+            if (response.status === 400) {
+                const data = await response.json().catch(() => ({}));
+                if (data.error && data.error.includes('CSRF')) {
+                    await refreshCsrfToken();
+                }
+            }
+            
+            return response;
+        }
+
         // Tab switching
-        function switchTab(tab) {
+        function switchTab(tab, event) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
@@ -947,12 +701,14 @@
             
             if (data.recognized.length > 0) {
                 alert.className = 'alert alert-success';
-                const names = data.recognized.map(n => `<span class="face-badge">✓ ${n}</span>`).join('');
+                const badges = data.recognized.map(r => 
+                    `<span class="face-badge">✓ ${r.name} (${r.confidence.toFixed(1)}%)</span>`
+                ).join('');
                 alert.innerHTML = `
                     <span class="alert-icon">🎉</span>
                     <div>
                         <strong>Recognized!</strong><br>
-                        ${names}
+                        ${badges}
                         <div class="timestamp">${data.timestamp}</div>
                     </div>
                 `;
@@ -993,18 +749,23 @@
             document.getElementById('unknownCount').textContent = stats.unknown;
         }
 
-        function loadStats() {
-            fetch(`${SERVER_URL}/stats`, {
-                credentials: "include"
-            })
-                .then(r => r.json())
-                .then(data => {
-                    stats.total = data.total_detections;
-                    stats.recognized = data.total_recognized;
-                    stats.unknown = stats.total - stats.recognized;
-                    updateStats();
-                    document.getElementById('knownFacesCount').textContent = data.known_faces_count;
+        async function loadStats() {
+            try {
+                const response = await fetch(`${SERVER_URL}/stats`, {
+                    credentials: 'include'
                 });
+                
+                if (!response.ok) throw new Error('Failed to load stats');
+                
+                const data = await response.json();
+                stats.total = data.total_detections;
+                stats.recognized = data.total_recognized;
+                stats.unknown = stats.total - stats.recognized;
+                updateStats();
+                document.getElementById('knownFacesCount').textContent = data.known_faces_count;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
         }
 
         // File upload
@@ -1029,23 +790,28 @@
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
-            handleFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
         });
 
         fileInput.addEventListener('change', (e) => {
-            handleFile(e.target.files[0]);
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
         });
 
         function handleFile(file) {
-            if (!file) return;
-
-            // File size validation (max 10MB)
-            const maxFileSize = 10 * 1024 * 1024;
-            if (file.size > maxFileSize) {
-                alert('❌ File too large (max 10MB). Will compress...');
+            if (!file || !file.type.startsWith('image/')) {
+                showError('uploadError', '❌ Please select a valid image file');
+                return;
             }
 
-            // Show processing feedback
+            const maxFileSize = 10 * 1024 * 1024;
+            if (file.size > maxFileSize) {
+                showError('uploadError', '⚠️ File is large (>10MB), compressing...');
+            }
+
             uploadBtn.innerHTML = '<span>⏳</span> Processing image...';
             uploadBtn.disabled = true;
 
@@ -1053,56 +819,57 @@
             const reader = new FileReader();
 
             reader.onerror = () => {
-                alert('❌ Failed to read file');
+                showError('uploadError', '❌ Failed to read file');
                 uploadBtn.disabled = false;
                 uploadBtn.innerHTML = '<span>💾</span> Add to Database';
             };
 
             reader.onload = e => {
                 img.onerror = () => {
-                    alert('❌ Invalid image file');
+                    showError('uploadError', '❌ Invalid image file');
                     uploadBtn.disabled = false;
                     uploadBtn.innerHTML = '<span>💾</span> Add to Database';
                 };
 
                 img.onload = () => {
                     try {
-                        const canvas = document.createElement("canvas");
-                        const ctx = canvas.getContext("2d");
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
 
-                        // Adaptive sizing based on file size
-                        let maxSize = 640;
-                        if (file.size > 5 * 1024 * 1024) maxSize = 480; // Compress more if large
+                        let maxSize = 800;
+                        if (file.size > 5 * 1024 * 1024) maxSize = 640;
                         
                         let { width, height } = img;
 
                         if (width > maxSize || height > maxSize) {
                             const scale = Math.min(maxSize / width, maxSize / height);
-                            width *= scale;
-                            height *= scale;
+                            width = Math.floor(width * scale);
+                            height = Math.floor(height * scale);
                         }
 
                         canvas.width = width;
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // Adaptive quality based on size
-                        const quality = file.size > 5 * 1024 * 1024 ? 0.75 : 0.9;
-                        const base64 = canvas.toDataURL("image/jpeg", quality);
+                        const quality = file.size > 5 * 1024 * 1024 ? 0.7 : 0.85;
+                        const base64 = canvas.toDataURL('image/jpeg', quality);
 
-                        // Check compressed size
-                        const compressedSize = base64.length / 4 / 1024;
-                        console.log(`Compressed image: ${compressedSize.toFixed(1)}KB`);
+                        const compressedSize = (base64.length * 3/4) / 1024;
+                        console.log(`Compressed: ${compressedSize.toFixed(1)}KB`);
 
-                        // preview
+                        if (compressedSize > 2048) {
+                            showError('uploadError', '⚠️ Image still too large after compression');
+                        }
+
                         previewImage.src = base64;
-                        previewContainer.style.display = "block";
+                        previewContainer.style.display = 'block';
 
                         selectedFile = base64;
                         uploadBtn.disabled = false;
                         uploadBtn.innerHTML = '<span>💾</span> Add to Database';
                     } catch (err) {
-                        alert('❌ Error processing image: ' + err.message);
+                        console.error('Processing error:', err);
+                        showError('uploadError', '❌ Error processing image: ' + err.message);
                         uploadBtn.disabled = false;
                         uploadBtn.innerHTML = '<span>💾</span> Add to Database';
                     }
@@ -1116,53 +883,89 @@
 
         uploadBtn.addEventListener('click', addFace);
 
-        function addFace() {
+        async function addFace() {
             const name = personName.value.trim();
             
-            if (!name || !selectedFile) {
-                alert('Please enter a name and select an image');
+            if (!name) {
+                showError('uploadError', '❌ Please enter a name');
+                return;
+            }
+            
+            if (name.length > 50) {
+                showError('uploadError', '❌ Name too long (max 50 characters)');
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9\s_-]+$/.test(name)) {
+                showError('uploadError', '❌ Name contains invalid characters');
+                return;
+            }
+            
+            if (!selectedFile) {
+                showError('uploadError', '❌ Please select an image');
                 return;
             }
             
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<span>⏳</span> Processing...';
             
-            fetch(`${SERVER_URL}/add_face`, {
-                method: 'POST',
-                credentials: "include",
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: name,
-                    image: selectedFile
-                })
-            })
-            .then(r => r.json())
-            .then(data => {
+            try {
+                const response = await authenticatedFetch(`${SERVER_URL}/add_face`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        image: selectedFile
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to add face');
+                }
+                
                 if (data.success) {
                     alert('✅ Face added successfully!');
                     personName.value = '';
                     previewContainer.style.display = 'none';
                     selectedFile = null;
+                    fileInput.value = '';
                     loadKnownFaces();
                 } else {
-                    alert('❌ Error: ' + data.error);
+                    throw new Error(data.error || 'Unknown error');
                 }
-            })
-            .catch(err => alert('Error: ' + err))
-            .finally(() => {
+            } catch (error) {
+                console.error('Add face error:', error);
+                showError('uploadError', '❌ ' + error.message);
+            } finally {
                 uploadBtn.disabled = false;
                 uploadBtn.innerHTML = '<span>💾</span> Add to Database';
-            });
+            }
         }
 
-        function loadKnownFaces() {
-            fetch(`${SERVER_URL}/known_faces`, {
-                credentials: "include"
-            })
-                .then(r => r.json())
-                .then(displayKnownFaces);
+        async function loadKnownFaces() {
+            try {
+                const response = await fetch(`${SERVER_URL}/known_faces`, {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) throw new Error('Failed to load faces');
+                
+                const faces = await response.json();
+                displayKnownFaces(faces);
+            } catch (error) {
+                console.error('Error loading faces:', error);
+                const grid = document.getElementById('facesGrid');
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <p>Error loading faces</p>
+                    </div>
+                `;
+            }
         }
 
         function displayKnownFaces(faces) {
@@ -1180,7 +983,7 @@
             
             grid.innerHTML = faces.map(face => `
                 <div class="face-card">
-                    <img src="${face.image}" alt="${face.name}">
+                    <img src="${face.image}" alt="${face.name}" loading="lazy">
                     <div class="face-name">${face.name}</div>
                     <button class="btn btn-danger" onclick="removeFace('${face.filename}')">
                         🗑️ Remove
@@ -1189,57 +992,78 @@
             `).join('');
         }
 
-        function removeFace(filename) {
+        async function removeFace(filename) {
             if (!confirm('Remove this face from database?')) return;
             
-            fetch(`${SERVER_URL}/remove_face/${filename}`, {
-                method: 'DELETE',
-                credentials: "include"
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        loadKnownFaces();
-                    }
+            try {
+                const response = await authenticatedFetch(`${SERVER_URL}/remove_face/${filename}`, {
+                    method: 'DELETE'
                 });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to remove face');
+                }
+                
+                if (data.success) {
+                    loadKnownFaces();
+                    loadStats();
+                }
+            } catch (error) {
+                console.error('Remove face error:', error);
+                alert('❌ Error: ' + error.message);
+            }
         }
 
-        function loadHistory() {
-            fetch(`${SERVER_URL}/history`, {
-                credentials: "include"
-            })
-                .then(r => r.json())
-                .then(data => {
-                    const container = document.getElementById('historyContainer');
-                    
-                    if (data.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <div class="empty-icon">📭</div>
-                                <p>No detections yet</p>
-                            </div>
-                        `;
-                        return;
-                    }
-                    
-                    container.innerHTML = data.map(item => {
-                        const badges = [
-                            ...item.recognized.map(n => `<span class="face-badge">✓ ${n}</span>`),
-                            ...(item.unknown > 0 ? [`<span class="face-badge">❓ ${item.unknown} Unknown</span>`] : [])
-                        ].join('');
-                        
-                        return `
-                            <div class="history-item">
-                                <div>
-                                    ${badges}
-                                    <div class="timestamp">${item.timestamp}</div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${SERVER_URL}/history`, {
+                    credentials: 'include'
                 });
+                
+                if (!response.ok) throw new Error('Failed to load history');
+                
+                const data = await response.json();
+                const container = document.getElementById('historyContainer');
+                
+                if (data.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <p>No detections yet</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = data.map(item => {
+                    const badges = [
+                        ...item.recognized.map(r => 
+                            `<span class="face-badge">✓ ${r.name} (${r.confidence.toFixed(1)}%)</span>`
+                        ),
+                        ...(item.unknown > 0 ? [`<span class="face-badge">❓ ${item.unknown} Unknown</span>`] : [])
+                    ].join('');
+                    
+                    return `
+                        <div class="history-item">
+                            <div>
+                                ${badges}
+                                <div class="timestamp">${item.timestamp}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading history:', error);
+                document.getElementById('historyContainer').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <p>Error loading history</p>
+                    </div>
+                `;
+            }
         }
-    </script>
 
-</body>
-</html>
+        // Refresh CSRF token periodically
+        setInterval(refreshCsrfToken, 30 * 60 * 1000); // Every 30 minutes
