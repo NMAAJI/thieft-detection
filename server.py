@@ -47,24 +47,6 @@ Session(app)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
-# Initialize database immediately (works on Railway with gunicorn)
-def init_db():
-    db = get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS detections (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_name TEXT,
-            face_hash TEXT,
-            first_seen INTEGER,
-            last_seen INTEGER,
-            count INTEGER
-        )
-    """)
-    db.commit()
-    db.close()
-
-init_db()
-
 # ================= SECURITY HEADERS =================
 @app.after_request
 def add_security_headers(resp):
@@ -116,6 +98,24 @@ LAST_UPLOAD = {}
 # ================= SQLITE DATABASE =================
 def get_db():
     return sqlite3.connect("detections.db", check_same_thread=False)
+
+def init_db():
+    db = get_db()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS detections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_name TEXT,
+            face_hash TEXT,
+            first_seen INTEGER,
+            last_seen INTEGER,
+            count INTEGER
+        )
+    """)
+    db.commit()
+    db.close()
+
+# Initialize database immediately (works on Railway with gunicorn)
+init_db()
 
 def face_hash(encoding):
     """Generate stable hash from face encoding"""
