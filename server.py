@@ -12,6 +12,8 @@ import face_recognition
 from time import time
 import uuid
 import re
+import sqlite3
+import hashlib
 
 # ================= ENV CONFIG =================
 UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET")  # SET IN RAILWAY
@@ -22,6 +24,8 @@ MAX_UPLOAD_MB = 2
 UPLOAD_INTERVAL = 0.5
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
+DEDUP_SECONDS = 10  # Only count same face once per 10 seconds
+KNOWN_FACE_DEDUP_SECONDS = 0  # Set to 0 to trigger alarm every time for known faces
 
 # ================= LOGIN CONFIG =================
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
@@ -141,6 +145,81 @@ def load_known_faces():
                 known_face_encodings.append(enc[0])
                 known_face_names.append(os.path.splitext(f)[0].split("_")[0])
 
+# ================= DATABASE =================
+def get_db():
+    """Get SQLite connection"""
+    return sqlite3.connect("detections.db", check_same_thread=False)
+
+def init_db():
+    """Initialize detection database"""
+    db = get_db()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS detections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_name TEXT,
+            face_hash TEXT,
+            first_seen INTEGER,
+            last_seen INTEGER,
+            count INTEGER
+        )
+    """)
+    db.commit()
+    db.close()
+
+def face_hash(encoding):
+    """Generate stable hash of face encoding"""
+    return hashlib.sha1(encoding.tobytes()).hexdigest()
+
+def record_detection(name, encoding):
+    """
+    Record face detection with deduplication.
+    For unknown faces: dedup within DEDUP_SECONDS
+    For known faces: dedup within KNOWN_FACE_DEDUP_SECONDS (0 = always trigger alarm)
+    Returns True if new detection, False if duplicate.
+    """
+    now = int(time())
+    fh = face_hash(encoding)
+    db = get_db()
+    
+    # Use different dedup window based on whether it's a known or unknown face
+    dedup_window = KNOWN_FACE_DEDUP_SECONDS if name != "Unknown" else DEDUP_SECONDS
+
+    row = db.execute(
+        "SELECT id, last_seen FROM detections WHERE face_hash=?",
+        (fh,)
+    ).fetchone()
+
+    if row:
+        record_id, last_seen = row
+        if now - last_seen < dedup_window:
+            # Update last_seen but don't count as new
+            db.execute(
+                "UPDATE detections SET last_seen=? WHERE id=?",
+                (now, record_id)
+            )
+            db.commit()
+            db.close()
+            return False  # Duplicate
+        else:
+            # New event: increment count and update last_seen
+            db.execute(
+                "UPDATE detections SET last_seen=?, count=count+1 WHERE id=?",
+                (now, record_id)
+            )
+            db.commit()
+            db.close()
+            return True  # New event
+    else:
+        # First time seeing this face
+        db.execute(
+            "INSERT INTO detections (person_name, face_hash, first_seen, last_seen, count) VALUES (?, ?, ?, ?, 1)",
+            (name, fh, now, now)
+        )
+        db.commit()
+        db.close()
+        return True  # New event
+# =============================================
+
 def recognize_faces(image):
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     locs = face_recognition.face_locations(rgb, model="hog")
@@ -250,6 +329,12 @@ def upload():
         else:
             names.append("Unknown")
 
+    # Count only new detections (deduplicated)
+    new_events = 0
+    for enc, name in zip(encs, names):
+        if record_detection(name, enc):
+            new_events += 1
+
     for (t, r, b, l), n in zip(locs, names):
         color = (0,255,0) if n != "Unknown" else (0,0,255)
         cv2.rectangle(image, (l,t), (r,b), color, 2)
@@ -261,7 +346,7 @@ def upload():
 
     detection = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "faces": len(locs),
+        "faces": new_events,  # Only new detections, not duplicates
         "recognized": [n for n in names if n != "Unknown"],
         "unknown": names.count("Unknown"),
         "image": f"data:image/jpeg;base64,{img_b64}"
@@ -364,6 +449,7 @@ def socket_connect(auth):
 # ================= START =================
 
 if __name__ == "__main__":
+    init_db()  # Initialize detection database
     load_known_faces()
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port, debug=False)
