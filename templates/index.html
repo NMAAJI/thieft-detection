@@ -327,6 +327,17 @@
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
         }
 
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: 2px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            border-color: #667eea;
+        }
+
         .btn-danger {
             background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
             color: white;
@@ -542,7 +553,12 @@
                         <div class="upload-icon">📸</div>
                         <h3>Click or Drag to Upload</h3>
                         <p>Upload a clear photo of the person's face</p>
-                        <input type="file" id="fileInput" accept="image/*" capture="environment">
+                        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+                            <button class="btn btn-secondary" id="cameraBtn" style="flex: 1;">📷 Camera</button>
+                            <button class="btn btn-secondary" id="galleryBtn" style="flex: 1;">🖼️ Gallery</button>
+                        </div>
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+                        <input type="file" id="galleryInput" accept="image/*" style="display:none;">
                     </div>
                     
                     <div id="previewContainer" class="preview-container" style="display:none;">
@@ -709,13 +725,38 @@
 
         // File upload
         const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
+        const cameraInput = document.getElementById('cameraInput');
+        const galleryInput = document.getElementById('galleryInput');
+        const cameraBtn = document.getElementById('cameraBtn');
+        const galleryBtn = document.getElementById('galleryBtn');
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
         const personName = document.getElementById('personName');
         const uploadBtn = document.getElementById('uploadBtn');
 
-        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('click', () => galleryInput.click());
+
+        // Camera button
+        cameraBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cameraInput.click();
+        });
+
+        // Gallery button
+        galleryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            galleryInput.click();
+        });
+
+        // Camera input
+        cameraInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+
+        // Gallery input
+        galleryInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
 
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -730,10 +771,6 @@
             e.preventDefault();
             uploadArea.classList.remove('dragover');
             handleFile(e.dataTransfer.files[0]);
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            handleFile(e.target.files[0]);
         });
 
         function handleFile(file) {

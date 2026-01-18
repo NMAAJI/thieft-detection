@@ -12,6 +12,8 @@ import face_recognition
 from time import time
 import uuid
 import re
+import sqlite3
+import hashlib
 
 # ================= ENV CONFIG =================
 UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET")  # SET IN RAILWAY
@@ -22,6 +24,7 @@ MAX_UPLOAD_MB = 2
 UPLOAD_INTERVAL = 0.5
 MAX_HISTORY = 100
 MAX_KNOWN_FACES = 100
+DEDUP_SECONDS = 10  # Time window for duplicate detection
 
 # ================= LOGIN CONFIG =================
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
@@ -91,6 +94,70 @@ known_face_names = []
 detection_history = []
 
 LAST_UPLOAD = {}
+
+# ================= SQLITE DATABASE =================
+def get_db():
+    return sqlite3.connect("detections.db", check_same_thread=False)
+
+def init_db():
+    db = get_db()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS detections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_name TEXT,
+            face_hash TEXT,
+            first_seen INTEGER,
+            last_seen INTEGER,
+            count INTEGER
+        )
+    """)
+    db.commit()
+    db.close()
+
+def face_hash(encoding):
+    """Generate stable hash from face encoding"""
+    return hashlib.sha1(encoding.tobytes()).hexdigest()
+
+def record_detection(name, encoding):
+    """Record face detection with deduplication. Returns True if new event, False if duplicate."""
+    now = int(time())
+    fh = face_hash(encoding)
+    db = get_db()
+    
+    row = db.execute(
+        "SELECT id, last_seen, count FROM detections WHERE face_hash=?",
+        (fh,)
+    ).fetchone()
+    
+    if row:
+        last_seen = row[1]
+        if now - last_seen < DEDUP_SECONDS:
+            # Update last_seen but don't increment count (duplicate within window)
+            db.execute(
+                "UPDATE detections SET last_seen=? WHERE id=?",
+                (now, row[0])
+            )
+            db.commit()
+            db.close()
+            return False  # duplicate
+        else:
+            # Same face but outside window - new event
+            db.execute(
+                "UPDATE detections SET last_seen=?, count=count+1 WHERE id=?",
+                (now, row[0])
+            )
+            db.commit()
+            db.close()
+            return True  # new event
+    else:
+        # New face never seen before
+        db.execute(
+            "INSERT INTO detections (person_name, face_hash, first_seen, last_seen, count) VALUES (?, ?, ?, ?, 1)",
+            (name, fh, now, now)
+        )
+        db.commit()
+        db.close()
+        return True  # new event
 
 # ================= HELPERS =================
 
@@ -224,7 +291,41 @@ def upload():
     if not rate_limit(ip):
         return jsonify({"error": "Too many requests"}), 429
 
-    image_bytes = request.files["file"].read() if "file" in request.files else request.data
+    # Handle multiple image input formats:
+    # 1. Multipart file upload (ESP32, web)
+    # 2. Binary data in request body (ESP32)
+    # 3. Base64 JSON (mobile gallery: {"image": "data:image/jpeg;base64,..."})
+    # 4. Base64 form data (mobile gallery: form with "image" field)
+    
+    image_bytes = None
+    
+    # Try multipart file first
+    if "file" in request.files:
+        image_bytes = request.files["file"].read()
+    # Try JSON with base64 image
+    elif request.is_json and request.json and "image" in request.json:
+        img_data = request.json["image"]
+        # Handle data URI format: "data:image/jpeg;base64,..."
+        if "," in img_data:
+            img_data = img_data.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(img_data)
+        except:
+            return jsonify({"error": "Invalid base64 image"}), 400
+    # Try form data with base64 image
+    elif "image" in request.form:
+        img_data = request.form["image"]
+        # Handle data URI format
+        if "," in img_data:
+            img_data = img_data.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(img_data)
+        except:
+            return jsonify({"error": "Invalid base64 image"}), 400
+    # Try raw binary data
+    elif request.data:
+        image_bytes = request.data
+    
     if not image_bytes or not is_valid_image(image_bytes):
         return jsonify({"error": "Invalid image"}), 400
 
@@ -259,9 +360,16 @@ def upload():
     _, buf = cv2.imencode(".jpg", image)
     img_b64 = base64.b64encode(buf).decode()
 
+    # Deduplication: count only new detections, not duplicates within DEDUP_SECONDS
+    new_events = 0
+    for enc, n in zip(encs, names):
+        if record_detection(n, enc):
+            new_events += 1
+
     detection = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "faces": len(locs),
+        "new_detections": new_events,
         "recognized": [n for n in names if n != "Unknown"],
         "unknown": names.count("Unknown"),
         "image": f"data:image/jpeg;base64,{img_b64}"
@@ -364,6 +472,7 @@ def socket_connect(auth):
 # ================= START =================
 
 if __name__ == "__main__":
+    init_db()  # Initialize database
     load_known_faces()
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port, debug=False)
